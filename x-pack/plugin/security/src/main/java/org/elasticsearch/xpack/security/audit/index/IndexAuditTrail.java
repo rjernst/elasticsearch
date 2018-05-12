@@ -7,7 +7,9 @@ package org.elasticsearch.xpack.security.audit.index;
 
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
+import org.apache.lucene.util.SetOnce;
 import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.ElasticsearchTimeoutException;
 import org.elasticsearch.Version;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.admin.cluster.state.ClusterStateResponse;
@@ -81,6 +83,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -174,6 +177,8 @@ public class IndexAuditTrail extends AbstractComponent implements AuditTrail, Cl
     private final EnumSet<AuditLevel> events;
     private final IndexNameResolver.Rollover rollover;
     private final boolean includeRequestBody;
+    private final CountDownLatch readyLatch =  new CountDownLatch(1);
+    private SetOnce<Exception> startException = new SetOnce<>();
 
     private BulkProcessor bulkProcessor;
     private String nodeHostName;
@@ -224,8 +229,8 @@ public class IndexAuditTrail extends AbstractComponent implements AuditTrail, Cl
 
                     @Override
                     public void onFailure(Exception throwable) {
-                        logger.error("failed to start index audit trail services", throwable);
-                        assert false : "security lifecycle services startup failed";
+                        startException.set(new RuntimeException("failed to start index audit trail services", throwable));
+                        readyLatch.countDown();
                     }
 
                     @Override
@@ -235,7 +240,17 @@ public class IndexAuditTrail extends AbstractComponent implements AuditTrail, Cl
                 });
             }
         } catch (Exception e) {
-            logger.error("failed to start index audit trail", e);
+            startException.set(new RuntimeException("failed to start index audit trail", e));
+            readyLatch.countDown();
+        }
+    }
+
+    /** Block until the audit trail index is ready to be used */
+    public void waitUntilReady() {
+        try {
+            readyLatch.await();
+        } catch (InterruptedException e) {
+            throw new ElasticsearchTimeoutException("Interrupted while waiting for index audit trail to be ready");
         }
     }
 
@@ -442,11 +457,16 @@ public class IndexAuditTrail extends AbstractComponent implements AuditTrail, Cl
         } else {
             logger.trace("successful state transition from starting to started, current value: [{}]", state.get());
         }
+        readyLatch.countDown();
     }
 
     public synchronized void stop() {
         if (state.compareAndSet(State.STARTED, State.STOPPING)) {
             queueConsumer.close();
+        } else {
+            // never actually started, but we need to mark as "ready" so node startup is not blocked indefinitely
+            // TODO: is this even possible?
+            readyLatch.countDown();
         }
 
         if (state() != State.STOPPED) {

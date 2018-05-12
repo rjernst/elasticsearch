@@ -1,6 +1,7 @@
 package com.carrotsearch.gradle.junit4
 
 import com.carrotsearch.ant.tasks.junit4.JUnit4
+import com.carrotsearch.ant.tasks.junit4.balancers.ExecutionTimeBalancer
 import org.gradle.api.AntBuilder
 import org.gradle.api.Plugin
 import org.gradle.api.Project

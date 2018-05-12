@@ -223,6 +223,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -983,5 +984,17 @@ public class Security extends Plugin implements ActionPlugin, IngestPlugin, Netw
     @Override
     public void reloadSPI(ClassLoader loader) {
         securityExtensions.addAll(SecurityExtension.loadExtensions(loader));
+    }
+
+    @Override
+    public void onNodeStarted() {
+        if (enabled == false) {
+            return;
+        }
+
+        securityIndex.get().waitUntilReady();
+        if (indexAuditTrail.get() != null) {
+            indexAuditTrail.get().waitUntilReady();
+        }
     }
 }

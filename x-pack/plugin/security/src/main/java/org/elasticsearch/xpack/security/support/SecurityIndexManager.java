@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.ElasticsearchParseException;
+import org.elasticsearch.ElasticsearchTimeoutException;
 import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.ResourceAlreadyExistsException;
 import org.elasticsearch.Version;
@@ -50,6 +51,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -121,7 +123,7 @@ public class SecurityIndexManager extends AbstractComponent implements ClusterSt
      *
      * The previous and current state are provided.
      */
-    public void addIndexStateListener(BiConsumer<State, State> listener) {
+    public synchronized void addIndexStateListener(BiConsumer<State, State> listener) {
         stateChangeListeners.add(listener);
     }
 
@@ -147,10 +149,36 @@ public class SecurityIndexManager extends AbstractComponent implements ClusterSt
         this.indexState = newState;
 
         if (newState.equals(previousState) == false) {
-            for (BiConsumer<State, State> listener : stateChangeListeners) {
-                listener.accept(previousState, newState);
-            }
+            notifyListeners(previousState, newState);
         }
+    }
+
+    private synchronized void notifyListeners(State previousState, State newState) {
+        for (BiConsumer<State, State> listener : stateChangeListeners) {
+            listener.accept(previousState, newState);
+        }
+    }
+
+    /**
+     * Block until the security index is ready to be used
+     *
+     * This does not mean the index is necessarily created, it only means the index template
+     * is available and up to date.
+     */
+    public synchronized void waitUntilReady() {
+        final CountDownLatch readyLatch = new CountDownLatch(1);
+        BiConsumer<State, State> readyListener = (prevState, newState) -> {
+            if (newState.indexAvailable && newState.mappingUpToDate) {
+                readyLatch.countDown();
+            }
+        };
+        addIndexStateListener(readyListener);
+        try {
+            readyLatch.await();
+        } catch (InterruptedException e) {
+            throw new ElasticsearchTimeoutException("Interrupted while waiting for security index to be ready");
+        }
+        stateChangeListeners.remove(readyListener);
     }
 
     private boolean checkIndexAvailable(ClusterState state) {
