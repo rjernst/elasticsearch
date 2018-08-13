@@ -38,7 +38,6 @@ import com.google.cloud.storage.StorageException;
 import com.google.cloud.storage.StorageOptions;
 import com.google.cloud.storage.StorageRpcOptionUtils;
 import com.google.cloud.storage.StorageTestUtils;
-
 import org.elasticsearch.core.internal.io.IOUtils;
 
 import java.io.ByteArrayInputStream;
@@ -56,6 +55,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * {@link MockStorage} mocks a {@link Storage} client by storing all the blobs
@@ -113,26 +113,15 @@ class MockStorage implements Storage {
         if (bucketName.equals(blobInfo.getBucket()) == false) {
             throw new StorageException(404, "Bucket not found");
         }
-        blobs.put(blobInfo.getName(), content);
+        if (Stream.of(options).anyMatch(option -> option.equals(BlobTargetOption.doesNotExist()))) {
+            byte[] existingBytes = blobs.putIfAbsent(blobInfo.getName(), content);
+            if (existingBytes != null) {
+                throw new StorageException(412, "Blob already exists");
+            }
+        } else {
+            blobs.put(blobInfo.getName(), content);
+        }
         return get(BlobId.of(blobInfo.getBucket(), blobInfo.getName()));
-    }
-
-    @Override
-    public CopyWriter copy(CopyRequest copyRequest) {
-        if (bucketName.equals(copyRequest.getSource().getBucket()) == false) {
-            throw new StorageException(404, "Source bucket not found");
-        }
-        if (bucketName.equals(copyRequest.getTarget().getBucket()) == false) {
-            throw new StorageException(404, "Target bucket not found");
-        }
-
-        final byte[] bytes = blobs.get(copyRequest.getSource().getName());
-        if (bytes == null) {
-            throw new StorageException(404, "Source blob does not exist");
-        }
-        blobs.put(copyRequest.getTarget().getName(), bytes);
-        return StorageRpcOptionUtils
-                .createCopyWriter(get(BlobId.of(copyRequest.getTarget().getBucket(), copyRequest.getTarget().getName())));
     }
 
     @Override
@@ -178,7 +167,27 @@ class MockStorage implements Storage {
     public ReadChannel reader(BlobId blob, BlobSourceOption... options) {
         if (bucketName.equals(blob.getBucket())) {
             final byte[] bytes = blobs.get(blob.getName());
-            final ReadableByteChannel readableByteChannel = Channels.newChannel(new ByteArrayInputStream(bytes));
+
+            final ReadableByteChannel readableByteChannel;
+            if (bytes != null) {
+                readableByteChannel = Channels.newChannel(new ByteArrayInputStream(bytes));
+            } else {
+                readableByteChannel = new ReadableByteChannel() {
+                    @Override
+                    public int read(ByteBuffer dst) throws IOException {
+                        throw new StorageException(404, "Object not found");
+                    }
+
+                    @Override
+                    public boolean isOpen() {
+                        return false;
+                    }
+
+                    @Override
+                    public void close() throws IOException {
+                    }
+                };
+            }
             return new ReadChannel() {
                 @Override
                 public void close() {
@@ -243,9 +252,16 @@ class MockStorage implements Storage {
                 }
 
                 @Override
-                public void close() throws IOException {
+                public void close() {
                     IOUtils.closeWhileHandlingException(writableByteChannel);
-                    blobs.put(blobInfo.getName(), output.toByteArray());
+                    if (Stream.of(options).anyMatch(option -> option.equals(BlobWriteOption.doesNotExist()))) {
+                        byte[] existingBytes = blobs.putIfAbsent(blobInfo.getName(), output.toByteArray());
+                        if (existingBytes != null) {
+                            throw new StorageException(412, "Blob already exists");
+                        }
+                    } else {
+                        blobs.put(blobInfo.getName(), output.toByteArray());
+                    }
                 }
             };
         }
@@ -253,6 +269,11 @@ class MockStorage implements Storage {
     }
 
     // Everything below this line is not implemented.
+
+    @Override
+    public CopyWriter copy(CopyRequest copyRequest) {
+        return null;
+    }
 
     @Override
     public Bucket create(BucketInfo bucketInfo, BucketTargetOption... options) {

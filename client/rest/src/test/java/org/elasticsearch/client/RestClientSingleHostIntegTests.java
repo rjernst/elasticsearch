@@ -29,16 +29,15 @@ import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.entity.ContentType;
-import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.TargetAuthenticationStrategy;
 import org.apache.http.impl.nio.client.HttpAsyncClientBuilder;
+import org.apache.http.message.BasicHeader;
 import org.apache.http.nio.entity.NStringEntity;
 import org.apache.http.util.EntityUtils;
 import org.elasticsearch.mocksocket.MockHttpServer;
 import org.junit.After;
-import org.junit.AfterClass;
 import org.junit.Before;
-import org.junit.BeforeClass;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -147,6 +146,8 @@ public class RestClientSingleHostIntegTests extends RestClientTestCase {
                     if (usePreemptiveAuth == false) {
                         // disable preemptive auth by ignoring any authcache
                         httpClientBuilder.disableAuthCaching();
+                        // don't use the "persistent credentials strategy"
+                        httpClientBuilder.setTargetAuthenticationStrategy(new TargetAuthenticationStrategy());
                     }
 
                     return httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider);
@@ -193,7 +194,7 @@ public class RestClientSingleHostIntegTests extends RestClientTestCase {
         assertTrue("timeout waiting for requests to be sent", latch.await(10, TimeUnit.SECONDS));
         if (exceptions.isEmpty() == false) {
             AssertionError error = new AssertionError("expected no failures but got some. see suppressed for first 10 of ["
-                                        + exceptions.size() + "] failures");
+                + exceptions.size() + "] failures");
             for (Exception exception : exceptions.subList(0, Math.min(10, exceptions.size()))) {
                 error.addSuppressed(exception);
             }
@@ -217,7 +218,7 @@ public class RestClientSingleHostIntegTests extends RestClientTestCase {
             Response esResponse;
             try {
                 esResponse = restClient.performRequest(method, "/" + statusCode, Collections.<String, String>emptyMap(), requestHeaders);
-            } catch(ResponseException e) {
+            } catch (ResponseException e) {
                 esResponse = e.getResponse();
             }
 
@@ -255,35 +256,51 @@ public class RestClientSingleHostIntegTests extends RestClientTestCase {
 
     public void testEncodeParams() throws IOException {
         {
-            Response response = restClient.performRequest("PUT", "/200", Collections.singletonMap("routing", "this/is/the/routing"));
+            Request request = new Request("PUT", "/200");
+            request.addParameter("routing", "this/is/the/routing");
+            Response response = restClient.performRequest(request);
             assertEquals(pathPrefix + "/200?routing=this%2Fis%2Fthe%2Frouting", response.getRequestLine().getUri());
         }
         {
-            Response response = restClient.performRequest("PUT", "/200", Collections.singletonMap("routing", "this|is|the|routing"));
+            Request request = new Request("PUT", "/200");
+            request.addParameter("routing", "this|is|the|routing");
+            Response response = restClient.performRequest(request);
             assertEquals(pathPrefix + "/200?routing=this%7Cis%7Cthe%7Crouting", response.getRequestLine().getUri());
         }
         {
-            Response response = restClient.performRequest("PUT", "/200", Collections.singletonMap("routing", "routing#1"));
+            Request request = new Request("PUT", "/200");
+            request.addParameter("routing", "routing#1");
+            Response response = restClient.performRequest(request);
             assertEquals(pathPrefix + "/200?routing=routing%231", response.getRequestLine().getUri());
         }
         {
-            Response response = restClient.performRequest("PUT", "/200", Collections.singletonMap("routing", "中文"));
+            Request request = new Request("PUT", "/200");
+            request.addParameter("routing", "中文");
+            Response response = restClient.performRequest(request);
             assertEquals(pathPrefix + "/200?routing=%E4%B8%AD%E6%96%87", response.getRequestLine().getUri());
         }
         {
-            Response response = restClient.performRequest("PUT", "/200", Collections.singletonMap("routing", "foo bar"));
+            Request request = new Request("PUT", "/200");
+            request.addParameter("routing", "foo bar");
+            Response response = restClient.performRequest(request);
             assertEquals(pathPrefix + "/200?routing=foo+bar", response.getRequestLine().getUri());
         }
         {
-            Response response = restClient.performRequest("PUT", "/200", Collections.singletonMap("routing", "foo+bar"));
+            Request request = new Request("PUT", "/200");
+            request.addParameter("routing", "foo+bar");
+            Response response = restClient.performRequest(request);
             assertEquals(pathPrefix + "/200?routing=foo%2Bbar", response.getRequestLine().getUri());
         }
         {
-            Response response = restClient.performRequest("PUT", "/200", Collections.singletonMap("routing", "foo/bar"));
+            Request request = new Request("PUT", "/200");
+            request.addParameter("routing", "foo/bar");
+            Response response = restClient.performRequest(request);
             assertEquals(pathPrefix + "/200?routing=foo%2Fbar", response.getRequestLine().getUri());
         }
         {
-            Response response = restClient.performRequest("PUT", "/200", Collections.singletonMap("routing", "foo^bar"));
+            Request request = new Request("PUT", "/200");
+            request.addParameter("routing", "foo^bar");
+            Response response = restClient.performRequest(request);
             assertEquals(pathPrefix + "/200?routing=foo%5Ebar", response.getRequestLine().getUri());
         }
     }
@@ -291,8 +308,8 @@ public class RestClientSingleHostIntegTests extends RestClientTestCase {
     /**
      * Verify that credentials are sent on the first request with preemptive auth enabled (default when provided with credentials).
      */
-    public void testPreemptiveAuthEnabled() throws IOException  {
-        final String[] methods = { "POST", "PUT", "GET", "DELETE" };
+    public void testPreemptiveAuthEnabled() throws IOException {
+        final String[] methods = {"POST", "PUT", "GET", "DELETE"};
 
         try (RestClient restClient = createRestClient(true, true)) {
             for (final String method : methods) {
@@ -306,8 +323,8 @@ public class RestClientSingleHostIntegTests extends RestClientTestCase {
     /**
      * Verify that credentials are <em>not</em> sent on the first request with preemptive auth disabled.
      */
-    public void testPreemptiveAuthDisabled() throws IOException  {
-        final String[] methods = { "POST", "PUT", "GET", "DELETE" };
+    public void testPreemptiveAuthDisabled() throws IOException {
+        final String[] methods = {"POST", "PUT", "GET", "DELETE"};
 
         try (RestClient restClient = createRestClient(true, false)) {
             for (final String method : methods) {
@@ -318,26 +335,45 @@ public class RestClientSingleHostIntegTests extends RestClientTestCase {
         }
     }
 
+    /**
+     * Verify that credentials continue to be sent even if a 401 (Unauthorized) response is received
+     */
+    public void testAuthCredentialsAreNotClearedOnAuthChallenge() throws IOException {
+        final String[] methods = {"POST", "PUT", "GET", "DELETE"};
+
+        try (RestClient restClient = createRestClient(true, true)) {
+            for (final String method : methods) {
+                Header realmHeader = new BasicHeader("WWW-Authenticate", "Basic realm=\"test\"");
+                final Response response401 = bodyTest(restClient, method, 401, new Header[]{realmHeader});
+                assertThat(response401.getHeader("Authorization"), startsWith("Basic"));
+
+                final Response response200 = bodyTest(restClient, method, 200, new Header[0]);
+                assertThat(response200.getHeader("Authorization"), startsWith("Basic"));
+            }
+        }
+
+    }
+
     public void testUrlWithoutLeadingSlash() throws Exception {
         if (pathPrefix.length() == 0) {
             try {
-                restClient.performRequest("GET", "200");
+                restClient.performRequest(new Request("GET", "200"));
                 fail("request should have failed");
-            } catch(ResponseException e) {
+            } catch (ResponseException e) {
                 assertEquals(404, e.getResponse().getStatusLine().getStatusCode());
             }
         } else {
             {
-                Response response = restClient.performRequest("GET", "200");
+                Response response = restClient.performRequest(new Request("GET", "200"));
                 //a trailing slash gets automatically added if a pathPrefix is configured
                 assertEquals(200, response.getStatusLine().getStatusCode());
             }
             {
                 //pathPrefix is not required to start with '/', will be added automatically
                 try (RestClient restClient = RestClient.builder(
-                        new HttpHost(httpServer.getAddress().getHostString(), httpServer.getAddress().getPort()))
-                        .setPathPrefix(pathPrefix.substring(1)).build()) {
-                    Response response = restClient.performRequest("GET", "200");
+                    new HttpHost(httpServer.getAddress().getHostString(), httpServer.getAddress().getPort()))
+                    .setPathPrefix(pathPrefix.substring(1)).build()) {
+                    Response response = restClient.performRequest(new Request("GET", "200"));
                     //a trailing slash gets automatically added if a pathPrefix is configured
                     assertEquals(200, response.getStatusLine().getStatusCode());
                 }
@@ -350,10 +386,19 @@ public class RestClientSingleHostIntegTests extends RestClientTestCase {
     }
 
     private Response bodyTest(final RestClient restClient, final String method) throws IOException {
-        String requestBody = "{ \"field\": \"value\" }";
         int statusCode = randomStatusCode(getRandom());
+        return bodyTest(restClient, method, statusCode, new Header[0]);
+    }
+
+    private Response bodyTest(RestClient restClient, String method, int statusCode, Header[] headers) throws IOException {
+        String requestBody = "{ \"field\": \"value\" }";
         Request request = new Request(method, "/" + statusCode);
         request.setJsonEntity(requestBody);
+        RequestOptions.Builder options = request.getOptions().toBuilder();
+        for (Header header : headers) {
+            options.addHeader(header.getName(), header.getValue());
+        }
+        request.setOptions(options);
         Response esResponse;
         try {
             esResponse = restClient.performRequest(request);

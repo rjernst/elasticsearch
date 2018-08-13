@@ -48,7 +48,7 @@ import org.elasticsearch.xpack.core.XPackSettings;
 import org.elasticsearch.xpack.core.security.authc.Authentication;
 import org.elasticsearch.xpack.core.security.authc.Authentication.RealmRef;
 import org.elasticsearch.xpack.core.security.authc.TokenMetaData;
-import org.elasticsearch.xpack.core.security.user.User;
+import org.elasticsearch.protocol.xpack.security.User;
 import org.elasticsearch.xpack.core.watcher.watch.ClockMock;
 import org.elasticsearch.xpack.security.support.SecurityIndexManager;
 import org.junit.AfterClass;
@@ -71,6 +71,7 @@ import static java.time.Clock.systemUTC;
 import static org.elasticsearch.repositories.ESBlobStoreTestCase.randomBytes;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
@@ -162,7 +163,7 @@ public class TokenServiceTests extends ESTestCase {
         mockGetTokenFromId(token);
 
         ThreadContext requestContext = new ThreadContext(Settings.EMPTY);
-        requestContext.putHeader("Authorization", "Bearer " + tokenService.getUserTokenString(token));
+        requestContext.putHeader("Authorization", randomFrom("Bearer ", "BEARER ", "bearer ") + tokenService.getUserTokenString(token));
 
         try (ThreadContext.StoredContext ignore = requestContext.newStoredContext(true)) {
             PlainActionFuture<UserToken> future = new PlainActionFuture<>();
@@ -180,6 +181,21 @@ public class TokenServiceTests extends ESTestCase {
             anotherService.getAndValidateToken(requestContext, future);
             UserToken fromOtherService = future.get();
             assertEquals(authentication, fromOtherService.getAuthentication());
+        }
+    }
+
+    public void testInvalidAuthorizationHeader() throws Exception {
+        TokenService tokenService = new TokenService(tokenServiceEnabledSettings, systemUTC(), client, securityIndex, clusterService);
+        ThreadContext requestContext = new ThreadContext(Settings.EMPTY);
+        String token = randomFrom("", "          ");
+        String authScheme = randomFrom("Bearer ", "BEARER ", "bearer ", "Basic ");
+        requestContext.putHeader("Authorization", authScheme + token);
+
+        try (ThreadContext.StoredContext ignore = requestContext.newStoredContext(true)) {
+            PlainActionFuture<UserToken> future = new PlainActionFuture<>();
+            tokenService.getAndValidateToken(requestContext, future);
+            UserToken serialized = future.get();
+            assertThat(serialized, nullValue());
         }
     }
 
@@ -450,7 +466,7 @@ public class TokenServiceTests extends ESTestCase {
         }
 
         final TimeValue defaultExpiration = TokenService.TOKEN_EXPIRATION.get(Settings.EMPTY);
-        final int fastForwardAmount = randomIntBetween(1, Math.toIntExact(defaultExpiration.getSeconds()));
+        final int fastForwardAmount = randomIntBetween(1, Math.toIntExact(defaultExpiration.getSeconds()) - 5);
         try (ThreadContext.StoredContext ignore = requestContext.newStoredContext(true)) {
             // move the clock forward but don't go to expiry
             clock.fastForwardSeconds(fastForwardAmount);
