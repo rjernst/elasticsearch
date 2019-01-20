@@ -20,6 +20,7 @@ package org.elasticsearch.search.aggregations.bucket.geogrid;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.SortedNumericDocValues;
+import org.apache.lucene.search.ScoreMode;
 import org.elasticsearch.common.lease.Releasables;
 import org.elasticsearch.common.util.LongHash;
 import org.elasticsearch.search.aggregations.Aggregator;
@@ -43,12 +44,12 @@ public class GeoHashGridAggregator extends BucketsAggregator {
 
     private final int requiredSize;
     private final int shardSize;
-    private final GeoGridAggregationBuilder.CellIdSource valuesSource;
+    private final CellIdSource valuesSource;
     private final LongHash bucketOrds;
 
-    GeoHashGridAggregator(String name, AggregatorFactories factories, GeoGridAggregationBuilder.CellIdSource valuesSource,
-            int requiredSize, int shardSize, SearchContext aggregationContext, Aggregator parent, List<PipelineAggregator> pipelineAggregators,
-            Map<String, Object> metaData) throws IOException {
+    GeoHashGridAggregator(String name, AggregatorFactories factories, CellIdSource valuesSource,
+            int requiredSize, int shardSize, SearchContext aggregationContext, Aggregator parent,
+            List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
         super(name, factories, aggregationContext, parent, pipelineAggregators, metaData);
         this.valuesSource = valuesSource;
         this.requiredSize = requiredSize;
@@ -57,8 +58,11 @@ public class GeoHashGridAggregator extends BucketsAggregator {
     }
 
     @Override
-    public boolean needsScores() {
-        return (valuesSource != null && valuesSource.needsScores()) || super.needsScores();
+    public ScoreMode scoreMode() {
+        if (valuesSource != null && valuesSource.needsScores()) {
+            return ScoreMode.COMPLETE;
+        }
+        return super.scoreMode();
     }
 
     @Override
@@ -92,7 +96,7 @@ public class GeoHashGridAggregator extends BucketsAggregator {
     }
 
     // private impl that stores a bucket ord. This allows for computing the aggregations lazily.
-    static class OrdinalBucket extends InternalGeoHashGrid.Bucket {
+    static class OrdinalBucket extends GeoGridBucket {
 
         long bucketOrd;
 
@@ -121,7 +125,7 @@ public class GeoHashGridAggregator extends BucketsAggregator {
             spare = (OrdinalBucket) ordered.insertWithOverflow(spare);
         }
 
-        final InternalGeoHashGrid.Bucket[] list = new InternalGeoHashGrid.Bucket[ordered.size()];
+        final GeoGridBucket[] list = new GeoGridBucket[ordered.size()];
         for (int i = ordered.size() - 1; i >= 0; --i) {
             final OrdinalBucket bucket = (OrdinalBucket) ordered.pop();
             bucket.aggregations = bucketAggregations(bucket.bucketOrd);

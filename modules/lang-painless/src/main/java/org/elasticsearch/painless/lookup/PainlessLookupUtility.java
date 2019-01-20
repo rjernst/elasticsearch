@@ -72,6 +72,21 @@ import java.util.Objects;
  * </ul>
  */
 public final class PainlessLookupUtility {
+    
+    /**
+     * The name for an anonymous class.
+     */
+    public static final String ANONYMOUS_CLASS_NAME = "$anonymous";
+
+    /**
+     * The def type name as specified in the source for a script.
+     */
+    public static final String DEF_CLASS_NAME = "def";
+
+    /**
+     * The method name for all constructors.
+     */
+    public static final String CONSTRUCTOR_NAME = "<init>";
 
     /**
      * Converts a canonical type name to a type based on the terminology specified as part of the documentation for
@@ -82,7 +97,7 @@ public final class PainlessLookupUtility {
         Objects.requireNonNull(canonicalTypeName);
         Objects.requireNonNull(canonicalClassNamesToClasses);
 
-        Class<?> type = canonicalClassNamesToClasses.get(canonicalTypeName);
+        Class<?> type = DEF_CLASS_NAME.equals(canonicalTypeName) ? def.class : canonicalClassNamesToClasses.get(canonicalTypeName);
 
         if (type != null) {
             return type;
@@ -105,7 +120,7 @@ public final class PainlessLookupUtility {
             }
 
             canonicalTypeName = canonicalTypeName.substring(0, canonicalTypeName.indexOf('['));
-            type = canonicalClassNamesToClasses.get(canonicalTypeName);
+            type = DEF_CLASS_NAME.equals(canonicalTypeName) ? def.class : canonicalClassNamesToClasses.get(canonicalTypeName);
 
             if (type != null) {
                 char arrayBraces[] = new char[arrayDimensions];
@@ -343,22 +358,7 @@ public final class PainlessLookupUtility {
     public static String buildPainlessFieldKey(String fieldName) {
         return fieldName;
     }
-
-    /**
-     * The name for an anonymous class.
-     */
-    public static final String ANONYMOUS_CLASS_NAME = "$anonymous";
-
-    /**
-     * The def type name as specified in the source for a script.
-     */
-    public static final String DEF_CLASS_NAME = "def";
-
-    /**
-     * The method name for all constructors.
-     */
-    public static final String CONSTRUCTOR_NAME = "<init>";
-
+    
     private PainlessLookupUtility() {
 
     }
