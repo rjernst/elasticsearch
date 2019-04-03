@@ -28,6 +28,8 @@ public enum EsType implements SQLType {
     OBJECT(                   Types.STRUCT),
     NESTED(                   Types.STRUCT),
     BINARY(                   Types.VARBINARY),
+    DATE(                     Types.DATE),
+    TIME(                     Types.TIME),
     DATETIME(                 Types.TIMESTAMP),
     IP(                       Types.VARCHAR),
     INTERVAL_YEAR(            ExtraTypes.INTERVAL_YEAR),

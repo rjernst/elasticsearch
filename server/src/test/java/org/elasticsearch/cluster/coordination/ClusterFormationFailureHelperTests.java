@@ -38,6 +38,7 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singletonList;
+import static org.elasticsearch.cluster.coordination.ClusterBootstrapService.BOOTSTRAP_PLACEHOLDER_PREFIX;
 import static org.elasticsearch.cluster.coordination.ClusterBootstrapService.INITIAL_MASTER_NODES_SETTING;
 import static org.elasticsearch.node.Node.NODE_NAME_SETTING;
 import static org.hamcrest.Matchers.equalTo;
@@ -64,13 +65,14 @@ public class ClusterFormationFailureHelperTests extends ESTestCase {
             = new DeterministicTaskQueue(Settings.builder().put(NODE_NAME_SETTING.getKey(), "node").build(), random());
 
         final AtomicLong warningCount = new AtomicLong();
+        final AtomicLong logLastFailedJoinAttemptWarningCount = new AtomicLong();
 
         final ClusterFormationFailureHelper clusterFormationFailureHelper = new ClusterFormationFailureHelper(settingsBuilder.build(),
             () -> {
                 warningCount.incrementAndGet();
                 return new ClusterFormationState(Settings.EMPTY, clusterState, emptyList(), emptyList(), 0L);
             },
-            deterministicTaskQueue.getThreadPool());
+            deterministicTaskQueue.getThreadPool(), () -> logLastFailedJoinAttemptWarningCount.incrementAndGet());
 
         deterministicTaskQueue.runAllTasks();
         assertThat("should not schedule anything yet", warningCount.get(), is(0L));
@@ -104,8 +106,10 @@ public class ClusterFormationFailureHelperTests extends ESTestCase {
         deterministicTaskQueue.runAllTasksInTimeOrder();
 
         assertThat(warningCount.get(), is(5L));
+        assertThat(logLastFailedJoinAttemptWarningCount.get(), is(5L));
 
         warningCount.set(0);
+        logLastFailedJoinAttemptWarningCount.set(0);
         clusterFormationFailureHelper.start();
         clusterFormationFailureHelper.stop();
         clusterFormationFailureHelper.start();
@@ -126,6 +130,7 @@ public class ClusterFormationFailureHelperTests extends ESTestCase {
         deterministicTaskQueue.runAllTasksInTimeOrder();
 
         assertThat(warningCount.get(), is(5L));
+        assertThat(logLastFailedJoinAttemptWarningCount.get(), is(5L));
     }
 
     public void testDescriptionOnMasterIneligibleNodes() {
@@ -200,6 +205,42 @@ public class ClusterFormationFailureHelperTests extends ESTestCase {
                 .lastCommittedConfiguration(config(committedConfig)).build())).build();
     }
 
+
+    public void testDescriptionAfterDetachCluster() {
+        final DiscoveryNode localNode = new DiscoveryNode("local", buildNewFakeTransportAddress(), Version.CURRENT);
+
+        final ClusterState clusterState = state(localNode,
+                VotingConfiguration.MUST_JOIN_ELECTED_MASTER.getNodeIds().toArray(new String[0]));
+
+        assertThat(new ClusterFormationState(Settings.EMPTY, clusterState, emptyList(), emptyList(), 0L).getDescription(),
+                is("master not discovered yet and this node was detached from its previous cluster, " +
+                        "have discovered []; " +
+                        "discovery will continue using [] from hosts providers and [" + localNode +
+                        "] from last-known cluster state; node term 0, last-accepted version 0 in term 0"));
+
+        final TransportAddress otherAddress = buildNewFakeTransportAddress();
+        assertThat(new ClusterFormationState(Settings.EMPTY, clusterState, singletonList(otherAddress), emptyList(), 0L).getDescription(),
+                is("master not discovered yet and this node was detached from its previous cluster, " +
+                        "have discovered []; " +
+                        "discovery will continue using [" + otherAddress + "] from hosts providers and [" + localNode +
+                        "] from last-known cluster state; node term 0, last-accepted version 0 in term 0"));
+
+        final DiscoveryNode otherNode = new DiscoveryNode("otherNode", buildNewFakeTransportAddress(), Version.CURRENT);
+        assertThat(new ClusterFormationState(Settings.EMPTY, clusterState, emptyList(), singletonList(otherNode), 0L).getDescription(),
+                is("master not discovered yet and this node was detached from its previous cluster, " +
+                        "have discovered [" + otherNode + "]; " +
+                        "discovery will continue using [] from hosts providers and [" + localNode +
+                        "] from last-known cluster state; node term 0, last-accepted version 0 in term 0"));
+
+        final DiscoveryNode yetAnotherNode = new DiscoveryNode("yetAnotherNode", buildNewFakeTransportAddress(), Version.CURRENT);
+        assertThat(new ClusterFormationState(Settings.EMPTY, clusterState, emptyList(), singletonList(yetAnotherNode), 0L).getDescription(),
+                is("master not discovered yet and this node was detached from its previous cluster, " +
+                        "have discovered [" + yetAnotherNode + "]; " +
+                        "discovery will continue using [] from hosts providers and [" + localNode +
+                        "] from last-known cluster state; node term 0, last-accepted version 0 in term 0"));
+
+    }
+
     public void testDescriptionAfterBootstrapping() {
         final DiscoveryNode localNode = new DiscoveryNode("local", buildNewFakeTransportAddress(), Version.CURRENT);
 
@@ -245,6 +286,13 @@ public class ClusterFormationFailureHelperTests extends ESTestCase {
                 "discovery will continue using [] from hosts providers and [" + localNode +
                 "] from last-known cluster state; node term 0, last-accepted version 0 in term 0"));
 
+        assertThat(new ClusterFormationState(Settings.EMPTY, state(localNode, "n1", "n2", BOOTSTRAP_PLACEHOLDER_PREFIX + "n3"),
+                emptyList(), emptyList(), 0L).getDescription(),
+            is("master not discovered or elected yet, an election requires 2 nodes with ids [n1, n2], " +
+                "have discovered [] which is not a quorum; " +
+                "discovery will continue using [] from hosts providers and [" + localNode +
+                "] from last-known cluster state; node term 0, last-accepted version 0 in term 0"));
+
         assertThat(new ClusterFormationState(Settings.EMPTY, state(localNode, "n1", "n2", "n3", "n4"), emptyList(), emptyList(), 0L)
                 .getDescription(),
             is("master not discovered or elected yet, an election requires at least 3 nodes with ids from [n1, n2, n3, n4], " +
@@ -255,6 +303,20 @@ public class ClusterFormationFailureHelperTests extends ESTestCase {
         assertThat(new ClusterFormationState(Settings.EMPTY, state(localNode, "n1", "n2", "n3", "n4", "n5"), emptyList(), emptyList(), 0L)
                 .getDescription(),
             is("master not discovered or elected yet, an election requires at least 3 nodes with ids from [n1, n2, n3, n4, n5], " +
+                "have discovered [] which is not a quorum; " +
+                "discovery will continue using [] from hosts providers and [" + localNode +
+                "] from last-known cluster state; node term 0, last-accepted version 0 in term 0"));
+
+        assertThat(new ClusterFormationState(Settings.EMPTY, state(localNode, "n1", "n2", "n3", "n4", BOOTSTRAP_PLACEHOLDER_PREFIX + "n5"),
+                emptyList(), emptyList(), 0L).getDescription(),
+            is("master not discovered or elected yet, an election requires at least 3 nodes with ids from [n1, n2, n3, n4], " +
+                "have discovered [] which is not a quorum; " +
+                "discovery will continue using [] from hosts providers and [" + localNode +
+                "] from last-known cluster state; node term 0, last-accepted version 0 in term 0"));
+
+        assertThat(new ClusterFormationState(Settings.EMPTY, state(localNode, "n1", "n2", "n3",
+            BOOTSTRAP_PLACEHOLDER_PREFIX + "n4", BOOTSTRAP_PLACEHOLDER_PREFIX + "n5"), emptyList(), emptyList(), 0L).getDescription(),
+            is("master not discovered or elected yet, an election requires 3 nodes with ids [n1, n2, n3], " +
                 "have discovered [] which is not a quorum; " +
                 "discovery will continue using [] from hosts providers and [" + localNode +
                 "] from last-known cluster state; node term 0, last-accepted version 0 in term 0"));

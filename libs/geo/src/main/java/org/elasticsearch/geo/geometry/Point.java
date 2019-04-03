@@ -20,26 +20,33 @@
 package org.elasticsearch.geo.geometry;
 
 /**
- * Represents a Point on the earth's surface in decimal degrees.
+ * Represents a Point on the earth's surface in decimal degrees and optional altitude in meters.
  */
 public class Point implements Geometry {
     public static final Point EMPTY = new Point();
 
     private final double lat;
     private final double lon;
+    private final double alt;
     private final boolean empty;
 
     private Point() {
         lat = 0;
         lon = 0;
+        alt = Double.NaN;
         empty = true;
     }
 
     public Point(double lat, double lon) {
+        this(lat, lon, Double.NaN);
+    }
+
+    public Point(double lat, double lon, double alt) {
         GeometryUtils.checkLatitude(lat);
         GeometryUtils.checkLongitude(lon);
         this.lat = lat;
         this.lon = lon;
+        this.alt = alt;
         this.empty = false;
     }
 
@@ -48,12 +55,16 @@ public class Point implements Geometry {
         return ShapeType.POINT;
     }
 
-    public double lat() {
+    public double getLat() {
         return lat;
     }
 
-    public double lon() {
+    public double getLon() {
         return lon;
+    }
+
+    public double getAlt() {
+        return alt;
     }
 
     @Override
@@ -64,7 +75,8 @@ public class Point implements Geometry {
         Point point = (Point) o;
         if (point.empty != empty) return false;
         if (Double.compare(point.lat, lat) != 0) return false;
-        return Double.compare(point.lon, lon) == 0;
+        if (Double.compare(point.lon, lon) != 0) return false;
+        return Double.compare(point.alt, alt) == 0;
     }
 
     @Override
@@ -74,6 +86,8 @@ public class Point implements Geometry {
         temp = Double.doubleToLongBits(lat);
         result = (int) (temp ^ (temp >>> 32));
         temp = Double.doubleToLongBits(lon);
+        result = 31 * result + (int) (temp ^ (temp >>> 32));
+        temp = Double.doubleToLongBits(alt);
         result = 31 * result + (int) (temp ^ (temp >>> 32));
         return result;
     }
@@ -89,7 +103,12 @@ public class Point implements Geometry {
     }
 
     @Override
+    public boolean hasAlt() {
+        return Double.isNaN(alt) == false;
+    }
+
+    @Override
     public String toString() {
-        return "lat=" + lat + ", lon=" + lon;
+        return "lat=" + lat + ", lon=" + lon + (hasAlt() ? ", alt=" + alt : "");
     }
 }

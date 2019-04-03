@@ -21,11 +21,9 @@ package org.elasticsearch.gradle.testclusters;
 import org.elasticsearch.gradle.test.GradleIntegrationTestCase;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
-import org.junit.Ignore;
 
 import java.util.Arrays;
 
-@Ignore // https://github.com/elastic/elasticsearch/issues/37218
 public class TestClustersPluginIT extends GradleIntegrationTestCase {
 
     public void testListClusters() {
@@ -39,19 +37,19 @@ public class TestClustersPluginIT extends GradleIntegrationTestCase {
     }
 
     public void testUseClusterByOne() {
-        BuildResult result = getTestClustersRunner("user1").build();
+        BuildResult result = getTestClustersRunner(":user1").build();
         assertTaskSuccessful(result, ":user1");
         assertStartedAndStoppedOnce(result);
     }
 
     public void testUseClusterByOneWithDryRun() {
-        BuildResult result = getTestClustersRunner("--dry-run", "user1").build();
+        BuildResult result = getTestClustersRunner("--dry-run", ":user1").build();
         assertNull(result.task(":user1"));
         assertNotStarted(result);
     }
 
     public void testUseClusterByTwo() {
-        BuildResult result = getTestClustersRunner("user1", "user2").build();
+        BuildResult result = getTestClustersRunner(":user1", ":user2").build();
         assertTaskSuccessful(result, ":user1", ":user2");
         assertStartedAndStoppedOnce(result);
     }
@@ -59,14 +57,14 @@ public class TestClustersPluginIT extends GradleIntegrationTestCase {
     public void testUseClusterByUpToDateTask() {
         // Run it once, ignoring the result and again to make sure it's considered up to date.
         // Gradle randomly considers tasks without inputs and outputs as as up-to-date or success on the first run
-        getTestClustersRunner("upToDate1", "upToDate2").build();
-        BuildResult result = getTestClustersRunner("upToDate1", "upToDate2").build();
+        getTestClustersRunner(":upToDate1", ":upToDate2").build();
+        BuildResult result = getTestClustersRunner(":upToDate1", ":upToDate2").build();
         assertTaskUpToDate(result, ":upToDate1", ":upToDate2");
         assertNotStarted(result);
     }
 
     public void testUseClusterBySkippedTask() {
-        BuildResult result = getTestClustersRunner("skipped1", "skipped2").build();
+        BuildResult result = getTestClustersRunner(":skipped1", ":skipped2").build();
         assertTaskSkipped(result, ":skipped1", ":skipped2");
         assertNotStarted(result);
     }
@@ -78,51 +76,94 @@ public class TestClustersPluginIT extends GradleIntegrationTestCase {
         assertOutputContains(
             result.getOutput(),
             "> Task :user1",
-            "Starting `node{::myTestCluster}`",
-            "Stopping `node{::myTestCluster}`"
+            "Starting `node{::myTestCluster-1}`",
+            "Stopping `node{::myTestCluster-1}`"
         );
     }
 
     public void testMultiProject() {
-        BuildResult result = GradleRunner.create()
-            .withProjectDir(getProjectDir("testclusters_multiproject"))
-            .withArguments("user1", "user2", "-s", "-i", "--parallel", "-Dlocal.repo.path=" + getLocalTestRepoPath())
-            .withPluginClasspath()
-            .build();
-        assertTaskSuccessful(result, ":user1", ":user2");
+        BuildResult result = getTestClustersRunner(
+            "user1", "user2", "-s", "-i", "--parallel", "-Dlocal.repo.path=" + getLocalTestRepoPath()
+        ).build();
+
+        assertTaskSuccessful(
+            result,
+            ":user1", ":user2", ":alpha:user1", ":alpha:user2", ":bravo:user1", ":bravo:user2"
+        );
+        assertStartedAndStoppedOnce(result);
+        assertOutputOnlyOnce(
+            result.getOutput(),
+            "Starting `node{:alpha:myTestCluster-1}`",
+            "Stopping `node{::myTestCluster-1}`"
+        );
+        assertOutputOnlyOnce(
+            result.getOutput(),
+            "Starting `node{::myTestCluster-1}`",
+            "Stopping `node{:bravo:myTestCluster-1}`"
+        );
+    }
+
+    public void testIncremental() {
+        BuildResult result = getTestClustersRunner("clean", ":user1").build();
+        assertTaskSuccessful(result, ":user1");
+        assertStartedAndStoppedOnce(result);
+
+        result = getTestClustersRunner(":user1").build();
+        assertTaskSuccessful(result, ":user1");
+        assertStartedAndStoppedOnce(result);
+
+        result = getTestClustersRunner("clean", ":user1").build();
+        assertTaskSuccessful(result, ":user1");
+        assertStartedAndStoppedOnce(result);
         assertStartedAndStoppedOnce(result);
     }
 
     public void testUseClusterByFailingOne() {
-        BuildResult result = getTestClustersRunner("itAlwaysFails").buildAndFail();
+        BuildResult result = getTestClustersRunner(":itAlwaysFails").buildAndFail();
         assertTaskFailed(result, ":itAlwaysFails");
         assertStartedAndStoppedOnce(result);
         assertOutputContains(
             result.getOutput(),
-            "Stopping `node{::myTestCluster}`, tailLogs: true",
+            "Stopping `node{::myTestCluster-1}`, tailLogs: true",
             "Execution failed for task ':itAlwaysFails'."
         );
     }
 
     public void testUseClusterByFailingDependency() {
-        BuildResult result = getTestClustersRunner("dependsOnFailed").buildAndFail();
+        BuildResult result = getTestClustersRunner(":dependsOnFailed").buildAndFail();
         assertTaskFailed(result, ":itAlwaysFails");
         assertNull(result.task(":dependsOnFailed"));
         assertStartedAndStoppedOnce(result);
         assertOutputContains(
             result.getOutput(),
-            "Stopping `node{::myTestCluster}`, tailLogs: true",
+            "Stopping `node{::myTestCluster-1}`, tailLogs: true",
             "Execution failed for task ':itAlwaysFails'."
         );
     }
 
     public void testConfigurationLocked() {
-        BuildResult result = getTestClustersRunner("illegalConfigAlter").buildAndFail();
+        BuildResult result = getTestClustersRunner(":illegalConfigAlter").buildAndFail();
         assertTaskFailed(result, ":illegalConfigAlter");
         assertOutputContains(
             result.getOutput(),
-            "Configuration can not be altered, already locked"
+            "Configuration for node{::myTestCluster-1} can not be altered, already locked"
         );
+    }
+
+    public void testMultiNode() {
+        BuildResult result = getTestClustersRunner(":multiNode").build();
+        assertTaskSuccessful(result, ":multiNode");
+        assertStartedAndStoppedOnce(result, "multiNode-1");
+        assertStartedAndStoppedOnce(result, "multiNode-2");
+        assertStartedAndStoppedOnce(result, "multiNode-3");
+    }
+
+    public void testPluginInstalled() {
+        BuildResult result = getTestClustersRunner(":printLog").build();
+        assertTaskSuccessful(result, ":printLog");
+        assertStartedAndStoppedOnce(result);
+        assertOutputContains(result.getOutput(), "-> Installed dummy");
+        assertOutputContains(result.getOutput(), "loaded plugin [dummy]");
     }
 
     private void assertNotStarted(BuildResult result) {
@@ -144,11 +185,17 @@ public class TestClustersPluginIT extends GradleIntegrationTestCase {
             .withPluginClasspath();
     }
 
-    private void assertStartedAndStoppedOnce(BuildResult result) {
+    private void assertStartedAndStoppedOnce(BuildResult result, String nodeName) {
         assertOutputOnlyOnce(
             result.getOutput(),
-            "Starting `node{::myTestCluster}`",
-            "Stopping `node{::myTestCluster}`"
+            "Starting `node{::" + nodeName + "}`",
+            "Stopping `node{::" + nodeName + "}`"
         );
     }
+
+    private void assertStartedAndStoppedOnce(BuildResult result) {
+        assertStartedAndStoppedOnce(result, "myTestCluster-1");
+    }
+
+
 }
