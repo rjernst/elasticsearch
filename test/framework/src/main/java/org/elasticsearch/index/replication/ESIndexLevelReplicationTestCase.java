@@ -65,7 +65,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexSettings;
-import org.elasticsearch.index.engine.DocIdSeqNoAndTerm;
+import org.elasticsearch.index.engine.DocIdSeqNoAndSource;
 import org.elasticsearch.index.engine.EngineFactory;
 import org.elasticsearch.index.engine.InternalEngineFactory;
 import org.elasticsearch.index.seqno.GlobalCheckpointSyncAction;
@@ -293,7 +293,7 @@ public abstract class ESIndexLevelReplicationTestCase extends IndexShardTestCase
             ShardRouting startedRoutingEntry = ShardRoutingHelper.moveToStarted(primary.routingEntry());
             IndexShardRoutingTable routingTable = routingTable(shr -> shr == primary.routingEntry() ? startedRoutingEntry : shr);
             primary.updateShardState(startedRoutingEntry, primary.getPendingPrimaryTerm(), null,
-                currentClusterStateVersion.incrementAndGet(), activeIds, routingTable, Collections.emptySet());
+                currentClusterStateVersion.incrementAndGet(), activeIds, routingTable);
             for (final IndexShard replica : replicas) {
                 recoverReplica(replica);
             }
@@ -385,7 +385,7 @@ public abstract class ESIndexLevelReplicationTestCase extends IndexShardTestCase
             IndexShardRoutingTable routingTable = routingTable(shr -> shr == replica.routingEntry() ? primaryRouting : shr);
 
             primary.updateShardState(primaryRouting, newTerm, primaryReplicaSyncer, currentClusterStateVersion.incrementAndGet(),
-                activeIds(), routingTable, Collections.emptySet());
+                activeIds(), routingTable);
         }
 
         private synchronized Set<String> activeIds() {
@@ -479,7 +479,7 @@ public abstract class ESIndexLevelReplicationTestCase extends IndexShardTestCase
             if (closed == false) {
                 closed = true;
                 try {
-                    final List<DocIdSeqNoAndTerm> docsOnPrimary = getDocIdAndSeqNos(primary);
+                    final List<DocIdSeqNoAndSource> docsOnPrimary = getDocIdAndSeqNos(primary);
                     for (IndexShard replica : replicas) {
                         assertThat(replica.getMaxSeenAutoIdTimestamp(), equalTo(primary.getMaxSeenAutoIdTimestamp()));
                         assertThat(replica.getMaxSeqNoOfUpdatesOrDeletes(), greaterThanOrEqualTo(primary.getMaxSeqNoOfUpdatesOrDeletes()));
@@ -520,7 +520,7 @@ public abstract class ESIndexLevelReplicationTestCase extends IndexShardTestCase
 
             primary.updateShardState(primary.routingEntry(), primary.getPendingPrimaryTerm(), null,
                 currentClusterStateVersion.incrementAndGet(),
-                activeIds(), routingTable(Function.identity()), Collections.emptySet());
+                activeIds(), routingTable(Function.identity()));
         }
 
         private synchronized void computeReplicationTargets() {
@@ -608,8 +608,8 @@ public abstract class ESIndexLevelReplicationTestCase extends IndexShardTestCase
         public void execute() {
             try {
                 new ReplicationOperation<>(request, new PrimaryRef(),
-                    ActionListener.wrap(result -> result.respond(listener), listener::onFailure), new ReplicasRef(), logger, opType
-                ).execute();
+                    ActionListener.wrap(result -> result.respond(listener), listener::onFailure), new ReplicasRef(), logger, opType,
+                    primaryTerm).execute();
             } catch (Exception e) {
                 listener.onFailure(e);
             }
@@ -678,6 +678,7 @@ public abstract class ESIndexLevelReplicationTestCase extends IndexShardTestCase
             public void performOn(
                 final ShardRouting replicaRouting,
                 final ReplicaRequest request,
+                final long primaryTerm,
                 final long globalCheckpoint,
                 final long maxSeqNoOfUpdatesOrDeletes,
                 final ActionListener<ReplicationOperation.ReplicaResponse> listener) {
@@ -700,12 +701,14 @@ public abstract class ESIndexLevelReplicationTestCase extends IndexShardTestCase
             }
 
             @Override
-            public void failShardIfNeeded(ShardRouting replica, String message, Exception exception, ActionListener<Void> listener) {
+            public void failShardIfNeeded(ShardRouting replica, long primaryTerm, String message, Exception exception,
+                                          ActionListener<Void> listener) {
                 throw new UnsupportedOperationException("failing shard " + replica + " isn't supported. failure: " + message, exception);
             }
 
             @Override
-            public void markShardCopyAsStaleIfNeeded(ShardId shardId, String allocationId, ActionListener<Void> listener) {
+            public void markShardCopyAsStaleIfNeeded(ShardId shardId, String allocationId, long primaryTerm,
+                                                     ActionListener<Void> listener) {
                 throw new UnsupportedOperationException("can't mark " + shardId  + ", aid [" + allocationId + "] as stale");
             }
         }

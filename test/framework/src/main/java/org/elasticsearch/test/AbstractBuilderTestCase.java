@@ -179,8 +179,7 @@ public abstract class AbstractBuilderTestCase extends ESTestCase {
 
     protected Settings createTestIndexSettings() {
         // we have to prefer CURRENT since with the range of versions we support it's rather unlikely to get the current actually.
-        Version indexVersionCreated = randomBoolean() ? Version.CURRENT
-                : VersionUtils.randomVersionBetween(random(), Version.V_6_0_0, Version.CURRENT);
+        Version indexVersionCreated = randomBoolean() ? Version.CURRENT : VersionUtils.randomIndexCompatibleVersion(random());
         return Settings.builder()
             .put(IndexMetaData.SETTING_VERSION_CREATED, indexVersionCreated)
             .build();
@@ -192,6 +191,10 @@ public abstract class AbstractBuilderTestCase extends ESTestCase {
 
     protected static String expectedFieldName(String builderFieldName) {
         return ALIAS_TO_CONCRETE_FIELD_NAME.getOrDefault(builderFieldName, builderFieldName);
+    }
+
+    protected Iterable<MappedFieldType> getMapping() {
+        return serviceHolder.mapperService.fieldTypes();
     }
 
     @AfterClass
@@ -347,7 +350,7 @@ public abstract class AbstractBuilderTestCase extends ESTestCase {
             List<Setting<?>> additionalSettings = pluginsService.getPluginSettings();
             SettingsModule settingsModule =
                     new SettingsModule(nodeSettings, additionalSettings, pluginsService.getPluginSettingsFilter(), Collections.emptySet());
-            searchModule = new SearchModule(nodeSettings, false, pluginsService.filterPlugins(SearchPlugin.class));
+            searchModule = new SearchModule(nodeSettings, pluginsService.filterPlugins(SearchPlugin.class));
             IndicesModule indicesModule = new IndicesModule(pluginsService.filterPlugins(MapperPlugin.class));
             List<NamedWriteableRegistry.Entry> entries = new ArrayList<>();
             entries.addAll(indicesModule.getNamedWriteables());
