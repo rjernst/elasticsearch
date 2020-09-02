@@ -208,6 +208,7 @@ public class SecureSM extends SecurityManager {
         innerCheckExit(status);
     }
 
+
     /**
      * The "Uwe Schindler" algorithm.
      *

@@ -19,6 +19,8 @@
 
 package org.elasticsearch.bootstrap;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.elasticsearch.cli.Command;
 import org.elasticsearch.common.SuppressForbidden;
 import org.elasticsearch.common.io.PathUtils;
@@ -30,6 +32,7 @@ import org.elasticsearch.plugins.PluginsService;
 import org.elasticsearch.secure_sm.SecureSM;
 import org.elasticsearch.transport.TcpTransport;
 
+import java.io.FilePermission;
 import java.io.IOException;
 import java.net.SocketPermission;
 import java.net.URISyntaxException;
@@ -40,10 +43,13 @@ import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
+import java.security.CodeSource;
 import java.security.NoSuchAlgorithmException;
+import java.security.PermissionCollection;
 import java.security.Permissions;
 import java.security.Policy;
 import java.security.URIParameter;
+import java.security.cert.Certificate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -105,6 +111,8 @@ import static org.elasticsearch.bootstrap.FilePermissionUtils.addSingleFilePath;
  * Troubleshooting Security</a> for information.
  */
 final class Security {
+    static Logger logger = LogManager.getLogger(Security.class);
+
     /** no instantiation */
     private Security() {}
 
@@ -186,6 +194,9 @@ final class Security {
 
                 // consult this policy for each of the plugin's jars:
                 for (URL url : codebases) {
+                    // check for permissions in the policy not allowed by any plugins
+                    checkPluginRestrictions(plugin.getFileName().toString(), policy, url);
+
                     if (map.put(url.getFile(), policy) != null) {
                         // just be paranoid ok?
                         throw new IllegalStateException("per-plugin permissions already granted for jar file: " + url);
@@ -195,6 +206,16 @@ final class Security {
         }
 
         return Collections.unmodifiableMap(map);
+    }
+
+    static void checkPluginRestrictions(String plugin, Policy policy, URL url) {
+        CodeSource codeSource = new CodeSource(url, (Certificate[]) null);
+        PermissionCollection permissions = policy.getPermissions(codeSource);
+        permissions.elementsAsStream().forEach(permission -> {
+            if (permission instanceof FilePermission && permission.getActions().contains("write")) {
+                throw new IllegalArgumentException("Plugin [" + plugin + "] cannot add additional filesystem write permissions");
+            }
+        });
     }
 
     /**

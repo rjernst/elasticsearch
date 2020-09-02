@@ -25,6 +25,7 @@ import java.io.FilePermission;
 import java.io.IOException;
 import java.net.SocketPermission;
 import java.net.URL;
+import java.security.AccessControlException;
 import java.security.CodeSource;
 import java.security.Permission;
 import java.security.PermissionCollection;
