@@ -21,10 +21,11 @@
 package org.elasticsearch.action.bulk;
 
 import org.apache.lucene.util.Constants;
-import org.elasticsearch.action.Action;
+import org.elasticsearch.Version;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionResponse;
+import org.elasticsearch.action.ActionType;
 import org.elasticsearch.action.IndicesRequest;
 import org.elasticsearch.action.admin.indices.create.CreateIndexResponse;
 import org.elasticsearch.action.support.ActionFilters;
@@ -32,15 +33,18 @@ import org.elasticsearch.action.support.AutoCreateIndex;
 import org.elasticsearch.client.node.NodeClient;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
+import org.elasticsearch.cluster.node.DiscoveryNode;
+import org.elasticsearch.cluster.node.DiscoveryNodeRole;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.AtomicArray;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.IndexNotFoundException;
-import org.elasticsearch.rest.action.document.RestBulkAction;
+import org.elasticsearch.index.IndexingPressure;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.test.ESTestCase;
+import org.elasticsearch.test.VersionUtils;
 import org.elasticsearch.test.transport.CapturingTransport;
 import org.elasticsearch.threadpool.TestThreadPool;
 import org.elasticsearch.threadpool.ThreadPool;
@@ -82,7 +86,9 @@ public class TransportBulkActionTookTests extends ESTestCase {
     @Before
     public void setUp() throws Exception {
         super.setUp();
-        clusterService = createClusterService(threadPool);
+        DiscoveryNode discoveryNode = new DiscoveryNode("node", ESTestCase.buildNewFakeTransportAddress(), Collections.emptyMap(),
+            DiscoveryNodeRole.BUILT_IN_ROLES, VersionUtils.randomCompatibleVersion(random(), Version.CURRENT));
+        clusterService = createClusterService(threadPool, discoveryNode);
     }
 
     @After
@@ -104,8 +110,8 @@ public class TransportBulkActionTookTests extends ESTestCase {
         NodeClient client = new NodeClient(Settings.EMPTY, threadPool) {
             @Override
             public <Request extends ActionRequest, Response extends ActionResponse>
-            void doExecute(Action<Response> action, Request request, ActionListener<Response> listener) {
-                listener.onResponse((Response)new CreateIndexResponse());
+            void doExecute(ActionType<Response> action, Request request, ActionListener<Response> listener) {
+                listener.onResponse((Response)new CreateIndexResponse(false, false, null));
             }
         };
 
@@ -115,7 +121,6 @@ public class TransportBulkActionTookTests extends ESTestCase {
                     threadPool,
                     transportService,
                     clusterService,
-                    null,
                     client,
                     actionFilters,
                     resolver,
@@ -139,7 +144,6 @@ public class TransportBulkActionTookTests extends ESTestCase {
                     threadPool,
                     transportService,
                     clusterService,
-                    null,
                     client,
                     actionFilters,
                     resolver,
@@ -201,8 +205,6 @@ public class TransportBulkActionTookTests extends ESTestCase {
 
             }
         });
-        //This test's JSON contains outdated references to types
-        assertWarnings(RestBulkAction.TYPES_DEPRECATION_MESSAGE);
     }
 
     static class Resolver extends IndexNameExpressionResolver {
@@ -218,7 +220,6 @@ public class TransportBulkActionTookTests extends ESTestCase {
                 ThreadPool threadPool,
                 TransportService transportService,
                 ClusterService clusterService,
-                TransportShardBulkAction shardBulkAction,
                 NodeClient client,
                 ActionFilters actionFilters,
                 IndexNameExpressionResolver indexNameExpressionResolver,
@@ -229,11 +230,11 @@ public class TransportBulkActionTookTests extends ESTestCase {
                     transportService,
                     clusterService,
                     null,
-                    shardBulkAction,
                     client,
                     actionFilters,
                     indexNameExpressionResolver,
                     autoCreateIndex,
+                    new IndexingPressure(Settings.EMPTY),
                     relativeTimeProvider);
         }
 

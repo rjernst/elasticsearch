@@ -27,21 +27,21 @@ import org.apache.lucene.analysis.util.TokenizerFactory;
 import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.codecs.DocValuesFormat;
 import org.apache.lucene.codecs.PostingsFormat;
+import org.apache.lucene.util.SPIClassIterator;
+import org.elasticsearch.Build;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.Version;
 import org.elasticsearch.action.admin.cluster.node.info.PluginsAndModules;
 import org.elasticsearch.bootstrap.JarHell;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.collect.Tuple;
-import org.elasticsearch.common.component.LifecycleComponent;
-import org.elasticsearch.common.inject.Module;
 import org.elasticsearch.common.io.FileSystemUtils;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Setting.Property;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.IndexModule;
+import org.elasticsearch.node.ReportingService;
 import org.elasticsearch.threadpool.ExecutorBuilder;
-import org.elasticsearch.transport.TransportSettings;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
@@ -61,15 +61,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.elasticsearch.common.io.FileSystemUtils.isAccessibleDirectory;
 
-public class PluginsService {
+public class PluginsService implements ReportingService<PluginsAndModules> {
 
     private static final Logger logger = LogManager.getLogger(PluginsService.class);
 
@@ -204,7 +202,6 @@ public class PluginsService {
 
     public Settings updatedSettings() {
         Map<String, String> foundSettings = new HashMap<>();
-        final Map<String, String> features = new TreeMap<>();
         final Settings.Builder builder = Settings.builder();
         for (Tuple<PluginInfo, Plugin> plugin : plugins) {
             Settings settings = plugin.v2().additionalSettings();
@@ -216,33 +213,8 @@ public class PluginsService {
                 }
             }
             builder.put(settings);
-            final Optional<String> maybeFeature = plugin.v2().getFeature();
-            if (maybeFeature.isPresent()) {
-                final String feature = maybeFeature.get();
-                if (features.containsKey(feature)) {
-                    final String message = String.format(
-                            Locale.ROOT,
-                            "duplicate feature [%s] in plugin [%s], already added in [%s]",
-                            feature,
-                            plugin.v1().getName(),
-                            features.get(feature));
-                    throw new IllegalArgumentException(message);
-                }
-                features.put(feature, plugin.v1().getName());
-            }
-        }
-        for (final String feature : features.keySet()) {
-            builder.put(TransportSettings.FEATURE_PREFIX + "." + feature, true);
         }
         return builder.put(this.settings).build();
-    }
-
-    public Collection<Module> createGuiceModules() {
-        List<Module> modules = new ArrayList<>();
-        for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            modules.addAll(plugin.v2().createGuiceModules());
-        }
-        return modules;
     }
 
     public List<ExecutorBuilder<?>> getExecutorBuilders(Settings settings) {
@@ -251,15 +223,6 @@ public class PluginsService {
             builders.addAll(plugin.v2().getExecutorBuilders(settings));
         }
         return builders;
-    }
-
-    /** Returns all classes injected into guice by plugins which extend {@link LifecycleComponent}. */
-    public Collection<Class<? extends LifecycleComponent>> getGuiceServiceClasses() {
-        List<Class<? extends LifecycleComponent>> services = new ArrayList<>();
-        for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            services.addAll(plugin.v2().getGuiceServiceClasses());
-        }
-        return services;
     }
 
     public void onIndexModule(IndexModule indexModule) {
@@ -271,6 +234,7 @@ public class PluginsService {
     /**
      * Get information about plugins and modules
      */
+    @Override
     public PluginsAndModules info() {
         return info;
     }
@@ -404,6 +368,9 @@ public class PluginsService {
         if (bundles.add(bundle) == false) {
             throw new IllegalStateException("duplicate " + type + ": " + info);
         }
+        if (type.equals("module") && info.getName().startsWith("test-") && Build.CURRENT.isSnapshot() == false) {
+            throw new IllegalStateException("external test module [" + plugin.getFileName() + "] found in non-snapshot build");
+        }
         return bundle;
     }
 
@@ -464,7 +431,6 @@ public class PluginsService {
         Map<String, Plugin> loaded = new HashMap<>();
         Map<String, Set<URL>> transitiveUrls = new HashMap<>();
         List<Bundle> sortedBundles = sortBundles(bundles);
-
         for (Bundle bundle : sortedBundles) {
             checkBundleJarHell(JarHell.parseClassPath(), bundle, transitiveUrls);
 
@@ -472,7 +438,90 @@ public class PluginsService {
             plugins.add(new Tuple<>(bundle.plugin, plugin));
         }
 
+        loadExtensions(plugins);
         return Collections.unmodifiableList(plugins);
+    }
+
+    // package-private for test visibility
+    static void loadExtensions(List<Tuple<PluginInfo, Plugin>> plugins) {
+        Map<String, List<Plugin>> extendingPluginsByName = plugins.stream()
+            .flatMap(t -> t.v1().getExtendedPlugins().stream().map(extendedPlugin -> Tuple.tuple(extendedPlugin, t.v2())))
+            .collect(Collectors.groupingBy(Tuple::v1, Collectors.mapping(Tuple::v2, Collectors.toList())));
+        for (Tuple<PluginInfo, Plugin> pluginTuple : plugins) {
+            if (pluginTuple.v2() instanceof ExtensiblePlugin) {
+                loadExtensionsForPlugin((ExtensiblePlugin) pluginTuple.v2(),
+                    extendingPluginsByName.getOrDefault(pluginTuple.v1().getName(), List.of()));
+            }
+        }
+    }
+
+    private static void loadExtensionsForPlugin(ExtensiblePlugin extensiblePlugin, List<Plugin> extendingPlugins) {
+        ExtensiblePlugin.ExtensionLoader extensionLoader = new ExtensiblePlugin.ExtensionLoader() {
+            @Override
+            public <T> List<T> loadExtensions(Class<T> extensionPointType) {
+                List<T> result = new ArrayList<>();
+                for (Plugin extendingPlugin : extendingPlugins) {
+                    result.addAll(createExtensions(extensionPointType, extendingPlugin));
+                }
+                return Collections.unmodifiableList(result);
+            }
+        };
+
+        extensiblePlugin.loadExtensions(extensionLoader);
+    }
+
+    private static <T> List<? extends T> createExtensions(Class<T> extensionPointType, Plugin plugin) {
+        SPIClassIterator<T> classIterator = SPIClassIterator.get(extensionPointType, plugin.getClass().getClassLoader());
+        List<T> extensions = new ArrayList<>();
+        while (classIterator.hasNext()) {
+            Class<? extends T> extensionClass = classIterator.next();
+            extensions.add(createExtension(extensionClass, extensionPointType, plugin));
+        }
+        return extensions;
+    }
+
+    // package-private for test visibility
+    static <T> T createExtension(Class<? extends T> extensionClass, Class<T> extensionPointType, Plugin plugin) {
+        //noinspection unchecked
+        Constructor<T>[] constructors = (Constructor<T>[]) extensionClass.getConstructors();
+        if (constructors.length == 0) {
+            throw new IllegalStateException("no public " + extensionConstructorMessage(extensionClass, extensionPointType));
+        }
+
+        if (constructors.length > 1) {
+            throw new IllegalStateException("no unique public " + extensionConstructorMessage(extensionClass, extensionPointType));
+        }
+
+        final Constructor<T> constructor = constructors[0];
+        if (constructor.getParameterCount() > 1) {
+            throw new IllegalStateException(extensionSignatureMessage(extensionClass, extensionPointType, plugin));
+        }
+
+        if (constructor.getParameterCount() == 1 && constructor.getParameterTypes()[0] != plugin.getClass()) {
+            throw new IllegalStateException(extensionSignatureMessage(extensionClass, extensionPointType, plugin) +
+                ", not (" + constructor.getParameterTypes()[0].getName() + ")");
+        }
+
+        try {
+            if (constructor.getParameterCount() == 0) {
+                return constructor.newInstance();
+            } else {
+                return constructor.newInstance(plugin);
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(
+                "failed to create extension [" + extensionClass.getName() + "] of type [" + extensionPointType.getName() + "]", e
+            );
+        }
+    }
+
+    private static <T> String extensionSignatureMessage(Class<? extends T> extensionClass, Class<T> extensionPointType, Plugin plugin) {
+        return "signature of " + extensionConstructorMessage(extensionClass, extensionPointType) +
+            " must be either () or (" + plugin.getClass().getName() + ")";
+    }
+
+    private static <T> String extensionConstructorMessage(Class<? extends T> extensionClass, Class<T> extensionPointType) {
+        return "constructor for extension [" + extensionClass.getName() + "] of type [" + extensionPointType.getName() + "]";
     }
 
     // jar-hell check the bundle against the parent classloader and extended plugins
@@ -547,12 +596,13 @@ public class PluginsService {
 
         // reload SPI with any new services from the plugin
         reloadLuceneSPI(loader);
-        for (String extendedPluginName : bundle.plugin.getExtendedPlugins()) {
-            // note: already asserted above that extended plugins are loaded and extensible
-            ExtensiblePlugin.class.cast(loaded.get(extendedPluginName)).reloadSPI(loader);
-        }
 
         Class<? extends Plugin> pluginClass = loadPluginClass(bundle.plugin.getClassname(), loader);
+        if (loader != pluginClass.getClassLoader()) {
+            throw new IllegalStateException("Plugin [" + name + "] must reference a class loader local Plugin class ["
+                + bundle.plugin.getClassname()
+                + "] (class loader [" + pluginClass.getClassLoader() + "])");
+        }
         Plugin plugin = loadPlugin(pluginClass, settings, configPath);
         loaded.put(name, plugin);
         return plugin;
@@ -599,7 +649,7 @@ public class PluginsService {
             throw new IllegalStateException(signatureMessage(pluginClass));
         }
 
-        final Class[] parameterTypes = constructor.getParameterTypes();
+        final Class<?>[] parameterTypes = constructor.getParameterTypes();
         try {
             if (constructor.getParameterCount() == 2 && parameterTypes[0] == Settings.class && parameterTypes[1] == Path.class) {
                 return (Plugin)constructor.newInstance(settings, configPath);
@@ -625,6 +675,7 @@ public class PluginsService {
                 "()");
     }
 
+    @SuppressWarnings("unchecked")
     public <T> List<T> filterPlugins(Class<T> type) {
         return plugins.stream().filter(x -> type.isAssignableFrom(x.v2().getClass()))
             .map(p -> ((T)p.v2())).collect(Collectors.toList());

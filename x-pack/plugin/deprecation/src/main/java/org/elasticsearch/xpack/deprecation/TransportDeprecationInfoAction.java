@@ -18,10 +18,12 @@ import org.elasticsearch.cluster.block.ClusterBlockLevel;
 import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
+import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.license.LicenseUtils;
 import org.elasticsearch.license.XPackLicenseState;
+import org.elasticsearch.tasks.Task;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.transport.TransportService;
 import org.elasticsearch.xpack.core.ClientHelper;
@@ -33,6 +35,7 @@ import org.elasticsearch.xpack.core.deprecation.NodesDeprecationCheckRequest;
 import org.elasticsearch.xpack.core.ml.action.GetDatafeedsAction;
 import org.elasticsearch.xpack.core.ml.datafeed.DatafeedConfig;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -71,8 +74,8 @@ public class TransportDeprecationInfoAction extends TransportMasterNodeReadActio
     }
 
     @Override
-    protected DeprecationInfoAction.Response newResponse() {
-        return new DeprecationInfoAction.Response();
+    protected DeprecationInfoAction.Response read(StreamInput in) throws IOException {
+        return new DeprecationInfoAction.Response(in);
     }
 
     @Override
@@ -82,9 +85,9 @@ public class TransportDeprecationInfoAction extends TransportMasterNodeReadActio
     }
 
     @Override
-    protected final void masterOperation(final DeprecationInfoAction.Request request, ClusterState state,
+    protected final void masterOperation(Task task, final DeprecationInfoAction.Request request, ClusterState state,
                                          final ActionListener<DeprecationInfoAction.Response> listener) {
-        if (licenseState.isDeprecationAllowed()) {
+        if (licenseState.checkFeature(XPackLicenseState.Feature.DEPRECATION)) {
 
             NodesDeprecationCheckRequest nodeDepReq = new NodesDeprecationCheckRequest("_all");
             ClientHelper.executeAsyncWithOrigin(client, ClientHelper.DEPRECATION_ORIGIN,
@@ -103,8 +106,7 @@ public class TransportDeprecationInfoAction extends TransportMasterNodeReadActio
                     datafeeds -> {
                         listener.onResponse(
                             DeprecationInfoAction.Response.from(state, xContentRegistry, indexNameExpressionResolver,
-                                request.indices(), request.indicesOptions(), datafeeds,
-                                response, INDEX_SETTINGS_CHECKS, CLUSTER_SETTINGS_CHECKS,
+                                request, datafeeds, response, INDEX_SETTINGS_CHECKS, CLUSTER_SETTINGS_CHECKS,
                                 ML_SETTINGS_CHECKS));
                     },
                     listener::onFailure

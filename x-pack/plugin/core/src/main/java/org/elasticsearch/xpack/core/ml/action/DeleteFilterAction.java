@@ -5,12 +5,10 @@
  */
 package org.elasticsearch.xpack.core.ml.action;
 
-import org.elasticsearch.action.Action;
 import org.elasticsearch.action.ActionRequestValidationException;
+import org.elasticsearch.action.ActionType;
 import org.elasticsearch.action.support.master.AcknowledgedRequest;
 import org.elasticsearch.action.support.master.AcknowledgedResponse;
-import org.elasticsearch.action.support.master.MasterNodeOperationRequestBuilder;
-import org.elasticsearch.client.ElasticsearchClient;
 import org.elasticsearch.common.ParseField;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
@@ -20,18 +18,13 @@ import java.io.IOException;
 import java.util.Objects;
 
 
-public class DeleteFilterAction extends Action<AcknowledgedResponse> {
+public class DeleteFilterAction extends ActionType<AcknowledgedResponse> {
 
     public static final DeleteFilterAction INSTANCE = new DeleteFilterAction();
     public static final String NAME = "cluster:admin/xpack/ml/filters/delete";
 
     private DeleteFilterAction() {
-        super(NAME);
-    }
-
-    @Override
-    public AcknowledgedResponse newResponse() {
-        return new AcknowledgedResponse();
+        super(NAME, AcknowledgedResponse::new);
     }
 
     public static class Request extends AcknowledgedRequest<Request> {
@@ -40,8 +33,9 @@ public class DeleteFilterAction extends Action<AcknowledgedResponse> {
 
         private String filterId;
 
-        public Request() {
-
+        public Request(StreamInput in) throws IOException {
+            super(in);
+            filterId = in.readString();
         }
 
         public Request(String filterId) {
@@ -55,12 +49,6 @@ public class DeleteFilterAction extends Action<AcknowledgedResponse> {
         @Override
         public ActionRequestValidationException validate() {
             return null;
-        }
-
-        @Override
-        public void readFrom(StreamInput in) throws IOException {
-            super.readFrom(in);
-            filterId = in.readString();
         }
 
         @Override
@@ -81,13 +69,6 @@ public class DeleteFilterAction extends Action<AcknowledgedResponse> {
             }
             Request other = (Request) obj;
             return Objects.equals(filterId, other.filterId);
-        }
-    }
-
-    public static class RequestBuilder extends MasterNodeOperationRequestBuilder<Request, AcknowledgedResponse, RequestBuilder> {
-
-        public RequestBuilder(ElasticsearchClient client, DeleteFilterAction action) {
-            super(client, action, new Request());
         }
     }
 }

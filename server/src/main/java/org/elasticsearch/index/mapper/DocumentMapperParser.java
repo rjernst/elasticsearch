@@ -23,6 +23,7 @@ import org.elasticsearch.Version;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.compress.CompressedXContent;
+import org.elasticsearch.common.time.DateFormatter;
 import org.elasticsearch.common.xcontent.LoggingDeprecationHandler;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.common.xcontent.XContentHelper;
@@ -32,6 +33,7 @@ import org.elasticsearch.index.IndexSettings;
 import org.elasticsearch.index.query.QueryShardContext;
 import org.elasticsearch.index.similarity.SimilarityService;
 import org.elasticsearch.indices.mapper.MapperRegistry;
+import org.elasticsearch.script.ScriptService;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -52,28 +54,32 @@ public class DocumentMapperParser {
 
     private final Map<String, Mapper.TypeParser> typeParsers;
     private final Map<String, MetadataFieldMapper.TypeParser> rootTypeParsers;
+    private final ScriptService scriptService;
 
     public DocumentMapperParser(IndexSettings indexSettings, MapperService mapperService, NamedXContentRegistry xContentRegistry,
-            SimilarityService similarityService, MapperRegistry mapperRegistry, Supplier<QueryShardContext> queryShardContextSupplier) {
+            SimilarityService similarityService, MapperRegistry mapperRegistry,
+            Supplier<QueryShardContext> queryShardContextSupplier, ScriptService scriptService) {
         this.mapperService = mapperService;
         this.xContentRegistry = xContentRegistry;
         this.similarityService = similarityService;
         this.queryShardContextSupplier = queryShardContextSupplier;
+        this.scriptService = scriptService;
         this.typeParsers = mapperRegistry.getMapperParsers();
         this.indexVersionCreated = indexSettings.getIndexVersionCreated();
         this.rootTypeParsers = mapperRegistry.getMetadataMapperParsers(indexVersionCreated);
     }
 
-    public Mapper.TypeParser.ParserContext parserContext(String type) {
-        return new Mapper.TypeParser.ParserContext(type, similarityService::getSimilarity, mapperService,
-                typeParsers::get, indexVersionCreated, queryShardContextSupplier);
+    public Mapper.TypeParser.ParserContext parserContext() {
+        return new Mapper.TypeParser.ParserContext(similarityService::getSimilarity, mapperService,
+                typeParsers::get, indexVersionCreated, queryShardContextSupplier, null, scriptService);
+    }
+
+    public Mapper.TypeParser.ParserContext parserContext(DateFormatter dateFormatter) {
+        return new Mapper.TypeParser.ParserContext(similarityService::getSimilarity, mapperService,
+            typeParsers::get, indexVersionCreated, queryShardContextSupplier, dateFormatter, scriptService);
     }
 
     public DocumentMapper parse(@Nullable String type, CompressedXContent source) throws MapperParsingException {
-        return parse(type, source, null);
-    }
-
-    public DocumentMapper parse(@Nullable String type, CompressedXContent source, String defaultSource) throws MapperParsingException {
         Map<String, Object> mapping = null;
         if (source != null) {
             Map<String, Object> root = XContentHelper.convertToMap(source.compressedReference(), true, XContentType.JSON).v2();
@@ -84,24 +90,16 @@ public class DocumentMapperParser {
         if (mapping == null) {
             mapping = new HashMap<>();
         }
-        return parse(type, mapping, defaultSource);
+        return parse(type, mapping);
     }
 
     @SuppressWarnings({"unchecked"})
-    private DocumentMapper parse(String type, Map<String, Object> mapping, String defaultSource) throws MapperParsingException {
+    private DocumentMapper parse(String type, Map<String, Object> mapping) throws MapperParsingException {
         if (type == null) {
             throw new MapperParsingException("Failed to derive type");
         }
 
-        if (defaultSource != null) {
-            Tuple<String, Map<String, Object>> t = extractMapping(MapperService.DEFAULT_MAPPING, defaultSource);
-            if (t.v2() != null) {
-                XContentHelper.mergeDefaults(mapping, t.v2());
-            }
-        }
-
-
-        Mapper.TypeParser.ParserContext parserContext = parserContext(type);
+        Mapper.TypeParser.ParserContext parserContext = parserContext();
         // parse RootObjectMapper
         DocumentMapper.Builder docBuilder = new DocumentMapper.Builder(
                 (RootObjectMapper.Builder) rootObjectTypeParser.parse(type, mapping, parserContext), mapperService);

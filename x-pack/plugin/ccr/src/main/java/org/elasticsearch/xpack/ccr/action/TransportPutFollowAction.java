@@ -20,7 +20,7 @@ import org.elasticsearch.client.Client;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.block.ClusterBlockException;
 import org.elasticsearch.cluster.block.ClusterBlockLevel;
-import org.elasticsearch.cluster.metadata.IndexMetaData;
+import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
@@ -31,6 +31,7 @@ import org.elasticsearch.index.IndexSettings;
 import org.elasticsearch.license.LicenseUtils;
 import org.elasticsearch.snapshots.RestoreInfo;
 import org.elasticsearch.snapshots.RestoreService;
+import org.elasticsearch.tasks.Task;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.transport.TransportService;
 import org.elasticsearch.xpack.ccr.CcrLicenseChecker;
@@ -41,6 +42,7 @@ import org.elasticsearch.xpack.core.ccr.action.PutFollowAction;
 import org.elasticsearch.xpack.core.ccr.action.ResumeFollowAction;
 
 import java.io.IOException;
+import java.util.Locale;
 import java.util.Objects;
 
 public final class TransportPutFollowAction
@@ -83,20 +85,15 @@ public final class TransportPutFollowAction
     }
 
     @Override
-    protected PutFollowAction.Response newResponse() {
-        throw new UnsupportedOperationException("usage of Streamable is to be replaced by Writeable");
-    }
-
-    @Override
     protected PutFollowAction.Response read(StreamInput in) throws IOException {
         return new PutFollowAction.Response(in);
     }
 
     @Override
     protected void masterOperation(
-            final PutFollowAction.Request request,
-            final ClusterState state,
-            final ActionListener<PutFollowAction.Response> listener) {
+        Task task, final PutFollowAction.Request request,
+        final ClusterState state,
+        final ActionListener<PutFollowAction.Response> listener) {
         if (ccrLicenseChecker.isCcrAllowed() == false) {
             listener.onFailure(LicenseUtils.newComplianceException("ccr"));
             return;
@@ -111,31 +108,45 @@ public final class TransportPutFollowAction
             remoteCluster,
             leaderIndex,
             listener::onFailure,
-            (historyUUID, leaderIndexMetaData) -> createFollowerIndex(leaderIndexMetaData, request, listener));
+            (historyUUID, leaderIndexMetadata) -> createFollowerIndex(leaderIndexMetadata, request, listener));
     }
 
     private void createFollowerIndex(
-            final IndexMetaData leaderIndexMetaData,
+            final IndexMetadata leaderIndexMetadata,
             final PutFollowAction.Request request,
             final ActionListener<PutFollowAction.Response> listener) {
-        if (leaderIndexMetaData == null) {
+        if (leaderIndexMetadata == null) {
             listener.onFailure(new IllegalArgumentException("leader index [" + request.getLeaderIndex() + "] does not exist"));
             return;
         }
-        if (IndexSettings.INDEX_SOFT_DELETES_SETTING.get(leaderIndexMetaData.getSettings()) == false) {
+        if (IndexSettings.INDEX_SOFT_DELETES_SETTING.get(leaderIndexMetadata.getSettings()) == false) {
             listener.onFailure(new IllegalArgumentException("leader index [" + request.getLeaderIndex() +
                 "] does not have soft deletes enabled"));
             return;
         }
 
-        final Settings.Builder settingsBuilder = Settings.builder()
-            .put(IndexMetaData.SETTING_INDEX_PROVIDED_NAME, request.getFollowerIndex())
-            .put(CcrSettings.CCR_FOLLOWING_INDEX_SETTING.getKey(), true);
+        final Settings replicatedRequestSettings = TransportResumeFollowAction.filter(request.getSettings());
+        if (replicatedRequestSettings.isEmpty() == false) {
+            final String message = String.format(
+                Locale.ROOT,
+                "can not put follower index that could override leader settings %s",
+                replicatedRequestSettings
+            );
+            listener.onFailure(new IllegalArgumentException(message));
+            return;
+        }
+
+        final Settings overrideSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_INDEX_PROVIDED_NAME, request.getFollowerIndex())
+            .put(CcrSettings.CCR_FOLLOWING_INDEX_SETTING.getKey(), true)
+            .put(request.getSettings())
+            .build();
+
         final String leaderClusterRepoName = CcrRepository.NAME_PREFIX + request.getRemoteCluster();
         final RestoreSnapshotRequest restoreRequest = new RestoreSnapshotRequest(leaderClusterRepoName, CcrRepository.LATEST)
             .indices(request.getLeaderIndex()).indicesOptions(request.indicesOptions()).renamePattern("^(.*)$")
             .renameReplacement(request.getFollowerIndex()).masterNodeTimeout(request.masterNodeTimeout())
-            .indexSettings(settingsBuilder);
+            .indexSettings(overrideSettings);
 
         final Client clientWithHeaders = CcrLicenseChecker.wrapClient(this.client, threadPool.getThreadContext().getHeaders());
         threadPool.executor(ThreadPool.Names.SNAPSHOT).execute(new AbstractRunnable() {

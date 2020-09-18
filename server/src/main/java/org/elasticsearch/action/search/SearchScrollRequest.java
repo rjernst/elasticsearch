@@ -113,13 +113,8 @@ public class SearchScrollRequest extends ActionRequest implements ToXContentObje
     }
 
     @Override
-    public void readFrom(StreamInput in) throws IOException {
-        throw new UnsupportedOperationException("usage of Streamable is to be replaced by Writeable");
-    }
-
-    @Override
     public Task createTask(long id, String type, String action, TaskId parentTaskId, Map<String, String> headers) {
-        return new SearchTask(id, type, action, getDescription(), parentTaskId, headers);
+        return new SearchTask(id, type, action, this::getDescription, parentTaskId, headers);
     }
 
     @Override

@@ -31,7 +31,12 @@ import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.PointRangeQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.SynonymQuery;
 import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.spans.SpanNearQuery;
+import org.apache.lucene.search.spans.SpanOrQuery;
+import org.apache.lucene.search.spans.SpanQuery;
+import org.apache.lucene.search.spans.SpanTermQuery;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest;
 import org.elasticsearch.common.ParsingException;
@@ -44,7 +49,7 @@ import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.index.search.MatchQuery;
 import org.elasticsearch.index.search.MatchQuery.Type;
 import org.elasticsearch.index.search.MatchQuery.ZeroTermsQuery;
-import org.elasticsearch.search.internal.SearchContext;
+import org.elasticsearch.test.AbstractQueryTestCase;
 import org.hamcrest.Matcher;
 
 import java.io.IOException;
@@ -54,23 +59,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import static java.util.Collections.singletonList;
 import static org.hamcrest.CoreMatchers.either;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
-public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuilder> {
-    @Override
-    protected boolean isCacheable(MatchQueryBuilder queryBuilder) {
-        return queryBuilder.fuzziness() != null
-                ||  isCacheable(singletonList(queryBuilder.fieldName()), queryBuilder.value().toString());
-    }
+public class MatchQueryBuilderTests extends AbstractQueryTestCase<MatchQueryBuilder> {
 
     @Override
     protected MatchQueryBuilder doCreateTestQueryBuilder() {
-        String fieldName = randomFrom(STRING_FIELD_NAME, STRING_ALIAS_FIELD_NAME, BOOLEAN_FIELD_NAME, INT_FIELD_NAME,
+        String fieldName = randomFrom(TEXT_FIELD_NAME, TEXT_ALIAS_FIELD_NAME, BOOLEAN_FIELD_NAME, INT_FIELD_NAME,
             DOUBLE_FIELD_NAME, DATE_FIELD_NAME);
         Object value;
         if (isTextField(fieldName)) {
@@ -143,7 +142,7 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
     }
 
     @Override
-    protected void doAssertLuceneQuery(MatchQueryBuilder queryBuilder, Query query, SearchContext searchContext) throws IOException {
+    protected void doAssertLuceneQuery(MatchQueryBuilder queryBuilder, Query query, QueryShardContext context) throws IOException {
         assertThat(query, notNullValue());
 
         if (query instanceof MatchAllDocsQuery) {
@@ -151,11 +150,11 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
             return;
         }
 
-        QueryShardContext context = searchContext.getQueryShardContext();
         MappedFieldType fieldType = context.fieldMapper(queryBuilder.fieldName());
         if (query instanceof TermQuery && fieldType != null) {
             String queryValue = queryBuilder.value().toString();
-            if (queryBuilder.analyzer() == null || queryBuilder.analyzer().equals("simple")) {
+            if (isTextField(queryBuilder.fieldName())
+                  && (queryBuilder.analyzer() == null || queryBuilder.analyzer().equals("simple"))) {
                 queryValue = queryValue.toLowerCase(Locale.ROOT);
             }
             Query expectedTermQuery = fieldType.termQuery(queryValue, context);
@@ -292,7 +291,8 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
         MatchQueryBuilder query = new MatchQueryBuilder(GEO_POINT_FIELD_NAME, "2,3");
         QueryShardContext context = createShardContext();
         QueryShardException e = expectThrows(QueryShardException.class, () -> query.toQuery(context));
-        assertEquals("Geo fields do not support exact searching, use dedicated geo queries instead: [mapped_geo_point]", e.getMessage());
+        assertEquals("Geometry fields do not support exact searching, use dedicated geometry queries instead: " +
+            "[mapped_geo_point]", e.getMessage());
         query.lenient(true);
         query.toQuery(context); // no exception
     }
@@ -349,8 +349,7 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
 
     @Override
     protected void initializeAdditionalMappings(MapperService mapperService) throws IOException {
-        mapperService.merge("_doc", new CompressedXContent(Strings.toString(PutMappingRequest.buildFromSimplifiedDef(
-            "_doc",
+        mapperService.merge("_doc", new CompressedXContent(Strings.toString(PutMappingRequest.simpleMapping(
             "string_boost", "type=text,boost=4", "string_no_pos",
             "type=text,index_options=docs"))
             ),
@@ -390,15 +389,15 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
 
         {
             matchQuery.setAutoGenerateSynonymsPhraseQuery(false);
-            final Query query = matchQuery.parse(Type.BOOLEAN, STRING_FIELD_NAME, "guinea pig");
+            final Query query = matchQuery.parse(Type.BOOLEAN, TEXT_FIELD_NAME, "guinea pig");
             final Query expectedQuery = new BooleanQuery.Builder()
                 .add(new BooleanQuery.Builder()
                         .add(new BooleanQuery.Builder()
-                                .add(new TermQuery(new Term(STRING_FIELD_NAME, "guinea")), BooleanClause.Occur.MUST)
-                                .add(new TermQuery(new Term(STRING_FIELD_NAME, "pig")), BooleanClause.Occur.MUST)
+                                .add(new TermQuery(new Term(TEXT_FIELD_NAME, "guinea")), BooleanClause.Occur.MUST)
+                                .add(new TermQuery(new Term(TEXT_FIELD_NAME, "pig")), BooleanClause.Occur.MUST)
                                 .build(),
                             BooleanClause.Occur.SHOULD)
-                        .add(new TermQuery(new Term(STRING_FIELD_NAME, "cavy")), BooleanClause.Occur.SHOULD)
+                        .add(new TermQuery(new Term(TEXT_FIELD_NAME, "cavy")), BooleanClause.Occur.SHOULD)
                         .build(),
                     BooleanClause.Occur.SHOULD).build();
             assertThat(query, equalTo(expectedQuery));
@@ -406,15 +405,15 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
 
         {
             matchQuery.setAutoGenerateSynonymsPhraseQuery(true);
-            final Query query = matchQuery.parse(Type.BOOLEAN, STRING_FIELD_NAME, "guinea pig");
+            final Query query = matchQuery.parse(Type.BOOLEAN, TEXT_FIELD_NAME, "guinea pig");
             final Query expectedQuery = new BooleanQuery.Builder()
                 .add(new BooleanQuery.Builder()
                         .add(new PhraseQuery.Builder()
-                            .add(new Term(STRING_FIELD_NAME, "guinea"))
-                            .add(new Term(STRING_FIELD_NAME, "pig"))
+                            .add(new Term(TEXT_FIELD_NAME, "guinea"))
+                            .add(new Term(TEXT_FIELD_NAME, "pig"))
                             .build(),
                             BooleanClause.Occur.SHOULD)
-                        .add(new TermQuery(new Term(STRING_FIELD_NAME, "cavy")), BooleanClause.Occur.SHOULD)
+                        .add(new TermQuery(new Term(TEXT_FIELD_NAME, "cavy")), BooleanClause.Occur.SHOULD)
                         .build(),
                     BooleanClause.Occur.SHOULD).build();
             assertThat(query, equalTo(expectedQuery));
@@ -422,15 +421,15 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
 
         {
             matchQuery.setAutoGenerateSynonymsPhraseQuery(false);
-            final Query query = matchQuery.parse(Type.BOOLEAN_PREFIX, STRING_FIELD_NAME, "guinea pig");
+            final Query query = matchQuery.parse(Type.BOOLEAN_PREFIX, TEXT_FIELD_NAME, "guinea pig");
             final Query expectedQuery = new BooleanQuery.Builder()
                 .add(new BooleanQuery.Builder()
                         .add(new BooleanQuery.Builder()
-                                .add(new TermQuery(new Term(STRING_FIELD_NAME, "guinea")), BooleanClause.Occur.MUST)
-                                .add(new TermQuery(new Term(STRING_FIELD_NAME, "pig")), BooleanClause.Occur.MUST)
+                                .add(new TermQuery(new Term(TEXT_FIELD_NAME, "guinea")), BooleanClause.Occur.MUST)
+                                .add(new TermQuery(new Term(TEXT_FIELD_NAME, "pig")), BooleanClause.Occur.MUST)
                                 .build(),
                             BooleanClause.Occur.SHOULD)
-                        .add(new TermQuery(new Term(STRING_FIELD_NAME, "cavy")), BooleanClause.Occur.SHOULD)
+                        .add(new TermQuery(new Term(TEXT_FIELD_NAME, "cavy")), BooleanClause.Occur.SHOULD)
                         .build(),
                     BooleanClause.Occur.SHOULD).build();
             assertThat(query, equalTo(expectedQuery));
@@ -438,12 +437,12 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
 
         {
             matchQuery.setAutoGenerateSynonymsPhraseQuery(true);
-            final Query query = matchQuery.parse(Type.BOOLEAN_PREFIX, STRING_FIELD_NAME, "guinea pig");
-            final MultiPhrasePrefixQuery guineaPig = new MultiPhrasePrefixQuery(STRING_FIELD_NAME);
-            guineaPig.add(new Term(STRING_FIELD_NAME, "guinea"));
-            guineaPig.add(new Term(STRING_FIELD_NAME, "pig"));
-            final MultiPhrasePrefixQuery cavy = new MultiPhrasePrefixQuery(STRING_FIELD_NAME);
-            cavy.add(new Term(STRING_FIELD_NAME, "cavy"));
+            final Query query = matchQuery.parse(Type.BOOLEAN_PREFIX, TEXT_FIELD_NAME, "guinea pig");
+            final MultiPhrasePrefixQuery guineaPig = new MultiPhrasePrefixQuery(TEXT_FIELD_NAME);
+            guineaPig.add(new Term(TEXT_FIELD_NAME, "guinea"));
+            guineaPig.add(new Term(TEXT_FIELD_NAME, "pig"));
+            final MultiPhrasePrefixQuery cavy = new MultiPhrasePrefixQuery(TEXT_FIELD_NAME);
+            cavy.add(new Term(TEXT_FIELD_NAME, "cavy"));
             final Query expectedQuery = new BooleanQuery.Builder()
                 .add(new BooleanQuery.Builder()
                         .add(guineaPig, BooleanClause.Occur.SHOULD)
@@ -454,12 +453,47 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
         }
     }
 
+    public void testMultiWordSynonymsPhrase() throws Exception {
+        final MatchQuery matchQuery = new MatchQuery(createShardContext());
+        matchQuery.setAnalyzer(new MockSynonymAnalyzer());
+        final Query actual = matchQuery.parse(Type.PHRASE, TEXT_FIELD_NAME, "guinea pig dogs");
+        Query expected = SpanNearQuery.newOrderedNearQuery(TEXT_FIELD_NAME)
+            .addClause(
+                new SpanOrQuery(new SpanQuery[]{
+                    SpanNearQuery.newOrderedNearQuery(TEXT_FIELD_NAME)
+                        .addClause(new SpanTermQuery(new Term(TEXT_FIELD_NAME, "guinea")))
+                        .addClause(new SpanTermQuery(new Term(TEXT_FIELD_NAME, "pig")))
+                        .setSlop(0)
+                        .build(),
+                    new SpanTermQuery(new Term(TEXT_FIELD_NAME, "cavy"))
+                })
+            )
+            .addClause(new SpanOrQuery(new SpanQuery[]{
+                new SpanTermQuery(new Term(TEXT_FIELD_NAME, "dogs")),
+                new SpanTermQuery(new Term(TEXT_FIELD_NAME, "dog"))
+            }))
+            .build();
+        assertEquals(expected, actual);
+    }
+
+
+    public void testAliasWithSynonyms() throws Exception {
+        final MatchQuery matchQuery = new MatchQuery(createShardContext());
+        matchQuery.setAnalyzer(new MockSynonymAnalyzer());
+        final Query actual = matchQuery.parse(Type.PHRASE, TEXT_ALIAS_FIELD_NAME, "dogs");
+        Query expected = new SynonymQuery.Builder(TEXT_FIELD_NAME)
+            .addTerm(new Term(TEXT_FIELD_NAME, "dogs"))
+            .addTerm(new Term(TEXT_FIELD_NAME, "dog"))
+            .build();
+        assertEquals(expected, actual);
+    }
+
     public void testMaxBooleanClause() {
         MatchQuery query = new MatchQuery(createShardContext());
         query.setAnalyzer(new MockGraphAnalyzer(createGiantGraph(40)));
-        expectThrows(BooleanQuery.TooManyClauses.class, () -> query.parse(Type.PHRASE, STRING_FIELD_NAME, ""));
+        expectThrows(BooleanQuery.TooManyClauses.class, () -> query.parse(Type.PHRASE, TEXT_FIELD_NAME, ""));
         query.setAnalyzer(new MockGraphAnalyzer(createGiantGraphMultiTerms()));
-        expectThrows(BooleanQuery.TooManyClauses.class, () -> query.parse(Type.PHRASE, STRING_FIELD_NAME, ""));
+        expectThrows(BooleanQuery.TooManyClauses.class, () -> query.parse(Type.PHRASE, TEXT_FIELD_NAME, ""));
     }
 
     private static class MockGraphAnalyzer extends Analyzer {
@@ -512,5 +546,23 @@ public class MatchQueryBuilderTests extends FullTextQueryTestCase<MatchQueryBuil
             tokens.add(new CannedBinaryTokenStream.BinaryToken(term1, 0, 1));
         }
         return tokens.toArray(new CannedBinaryTokenStream.BinaryToken[0]);
+    }
+
+    /**
+     * "now" on date fields should make the query non-cachable.
+     */
+    public void testCachingStrategiesWithNow() throws IOException {
+        // if we hit a date field with "now", this should diable cachability
+        MatchQueryBuilder queryBuilder = new MatchQueryBuilder(DATE_FIELD_NAME, "now");
+        QueryShardContext context = createShardContext();
+        assert context.isCacheable();
+        /*
+         * We use a private rewrite context here since we want the most realistic way of asserting that we are cacheable or not. We do it
+         * this way in SearchService where we first rewrite the query with a private context, then reset the context and then build the
+         * actual lucene query
+         */
+        QueryBuilder rewritten = rewriteQuery(queryBuilder, new QueryShardContext(context));
+        assertNotNull(rewritten.toQuery(context));
+        assertFalse("query should not be cacheable: " + queryBuilder.toString(), context.isCacheable());
     }
 }

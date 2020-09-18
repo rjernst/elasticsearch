@@ -5,6 +5,8 @@
  */
 package org.elasticsearch.xpack.ml.filestructurefinder;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.SuppressForbidden;
 import org.elasticsearch.common.collect.Tuple;
@@ -48,8 +50,11 @@ public final class TimestampFormatFinder {
     private static final String PREFACE = "preface";
     private static final String EPILOGUE = "epilogue";
 
+    private static final Logger logger = LogManager.getLogger(TimestampFormatFinder.class);
     private static final String PUNCTUATION_THAT_NEEDS_ESCAPING_IN_REGEX = "\\|()[]{}^$.*?";
     private static final String FRACTIONAL_SECOND_SEPARATORS = ":.,";
+    private static final Pattern FRACTIONAL_SECOND_INTERPRETER =
+        Pattern.compile("([" + FRACTIONAL_SECOND_SEPARATORS + "])(\\d{3,9})($|[Z+-])");
     private static final char INDETERMINATE_FIELD_PLACEHOLDER = '?';
     // The ? characters in this must match INDETERMINATE_FIELD_PLACEHOLDER
     // above, but they're literals in this regex to aid readability
@@ -97,10 +102,10 @@ public final class TimestampFormatFinder {
             "\\b\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}", "\\b%{TIMESTAMP_ISO8601}\\b", "TIMESTAMP_ISO8601",
             "1111 11 11 11 11", 0, 19);
     static final CandidateTimestampFormat UNIX_MS_CANDIDATE_FORMAT =
-        new CandidateTimestampFormat(example -> Collections.singletonList("UNIX_MS"), "\\b\\d{13}\\b", "\\b\\d{13}\\b", "POSINT",
+        new CandidateTimestampFormat(example -> Collections.singletonList("UNIX_MS"), "\\b\\d{13}\\b", "\\b[12]\\d{12}\\b", "POSINT",
             "1111111111111", 0, 0);
     static final CandidateTimestampFormat UNIX_CANDIDATE_FORMAT =
-        new CandidateTimestampFormat(example -> Collections.singletonList("UNIX"), "\\b\\d{10}\\b", "\\b\\d{10}(?:\\.\\d{3,9})?\\b",
+        new CandidateTimestampFormat(example -> Collections.singletonList("UNIX"), "\\b\\d{10}\\b", "\\b[12]\\d{9}(?:\\.\\d{3,9})?\\b",
             "NUMBER", "1111111111", 0, 10);
     static final CandidateTimestampFormat TAI64N_CANDIDATE_FORMAT =
         new CandidateTimestampFormat(example -> Collections.singletonList("TAI64N"), "\\b[0-9A-Fa-f]{24}\\b", "\\b[0-9A-Fa-f]{24}\\b",
@@ -145,7 +150,7 @@ public final class TimestampFormatFinder {
             example -> CandidateTimestampFormat.expandDayAndAdjustFractionalSecondsFromExample(example, "MMM dd HH:mm:ss"),
             "\\b[A-Z]\\S{2,8} {1,2}\\d{1,2} \\d{2}:\\d{2}:\\d{2}\\b",
             "%{MONTH} +%{MONTHDAY} %{HOUR}:%{MINUTE}:(?:[0-5][0-9]|60)(?:[:.,][0-9]{3,9})?\\b", "SYSLOGTIMESTAMP",
-            Arrays.asList("    11 11 11 11", "    1 11 11 11"), 4, 10),
+            Arrays.asList("    11 11 11 11", "    1 11 11 11"), 6, 10),
         new CandidateTimestampFormat(example -> Collections.singletonList("dd/MMM/yyyy:HH:mm:ss XX"),
             "\\b\\d{2}/[A-Z]\\S{2}/\\d{4}:\\d{2}:\\d{2}:\\d{2} ",
             "\\b%{MONTHDAY}/%{MONTH}/%{YEAR}:%{HOUR}:%{MINUTE}:(?:[0-5][0-9]|60) [+-]?%{HOUR}%{MINUTE}\\b", "HTTPDATE",
@@ -154,25 +159,35 @@ public final class TimestampFormatFinder {
             "\\b[A-Z]\\S{2} \\d{2}, \\d{4} \\d{1,2}:\\d{2}:\\d{2} [AP]M\\b",
             "%{MONTH} %{MONTHDAY}, 20\\d{2} %{HOUR}:%{MINUTE}:(?:[0-5][0-9]|60) (?:AM|PM)\\b", "CATALINA_DATESTAMP",
             Arrays.asList("    11  1111 1 11 11", "    11  1111 11 11 11"), 0, 3),
-        new CandidateTimestampFormat(example -> Arrays.asList("MMM dd yyyy HH:mm:ss", "MMM  d yyyy HH:mm:ss"),
+        new CandidateTimestampFormat(example -> Arrays.asList("MMM dd yyyy HH:mm:ss", "MMM  d yyyy HH:mm:ss", "MMM d yyyy HH:mm:ss"),
             "\\b[A-Z]\\S{2} {1,2}\\d{1,2} \\d{4} \\d{2}:\\d{2}:\\d{2}\\b",
             "%{MONTH} +%{MONTHDAY} %{YEAR} %{HOUR}:%{MINUTE}:(?:[0-5][0-9]|60)\\b", "CISCOTIMESTAMP",
-            Arrays.asList("    11 1111 11 11 11", "     1 1111 11 11 11"), 0, 0),
+            Arrays.asList("    11 1111 11 11 11", "    1 1111 11 11 11"), 1, 0),
         new CandidateTimestampFormat(CandidateTimestampFormat::indeterminateDayMonthFormatFromExample,
-            "\\b\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{4}[- ]\\d{2}:\\d{2}:\\d{2}\\b", "\\b%{DATESTAMP}\\b", "DATESTAMP",
-            // In DATESTAMP the month may be 1 or 2 digits, but the day must be 2
-            Arrays.asList("11 11 1111 11 11 11", "1 11 1111 11 11 11", "11 1 1111 11 11 11"), 0, 10),
+            "\\b\\d{1,2}[/.-]\\d{1,2}[/.-](?:\\d{2}){1,2}[- ]\\d{2}:\\d{2}:\\d{2}\\b", "\\b%{DATESTAMP}\\b", "DATESTAMP",
+            // In DATESTAMP the month may be 1 or 2 digits, the year 2 or 4, but the day must be 2
+            // Also note the Grok pattern search space is set to start one character before a quick rule-out
+            // match because we don't want 11 11 11 matching into 1111 11 11 with this pattern
+            Arrays.asList("11 11 1111 11 11 11", "1 11 1111 11 11 11", "11 1 1111 11 11 11", "11 11 11 11 11 11", "1 11 11 11 11 11",
+                "11 1 11 11 11 11"), 1, 10),
         new CandidateTimestampFormat(CandidateTimestampFormat::indeterminateDayMonthFormatFromExample,
-            "\\b\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{4}\\b", "\\b%{DATE}\\b", "DATE",
-            // In DATE the month may be 1 or 2 digits, but the day must be 2
-            Arrays.asList("11 11 1111", "11 1 1111", "1 11 1111"), 0, 0),
+            "\\b\\d{1,2}[/.-]\\d{1,2}[/.-](?:\\d{2}){1,2}\\b", "\\b%{DATE}\\b", "DATE",
+            // In DATE the month may be 1 or 2 digits, the year 2 or 4, but the day must be 2
+            // Also note the Grok pattern search space is set to start one character before a quick rule-out
+            // match because we don't want 11 11 11 matching into 1111 11 11 with this pattern
+            Arrays.asList("11 11 1111", "11 1 1111", "1 11 1111", "11 11 11", "11 1 11", "1 11 11"), 1, 0),
         UNIX_MS_CANDIDATE_FORMAT,
         UNIX_CANDIDATE_FORMAT,
         TAI64N_CANDIDATE_FORMAT,
         // This one is an ISO8601 date with no time, but the TIMESTAMP_ISO8601 Grok pattern doesn't cover it
         new CandidateTimestampFormat(example -> Collections.singletonList("ISO8601"),
             "\\b\\d{4}-\\d{2}-\\d{2}\\b", "\\b%{YEAR}-%{MONTHNUM2}-%{MONTHDAY}\\b", CUSTOM_TIMESTAMP_GROK_NAME,
-            "1111 11 11", 0, 0)
+            "1111 11 11", 0, 0),
+        // The Kibana export format
+        new CandidateTimestampFormat(example -> Collections.singletonList("MMM dd, yyyy @ HH:mm:ss.SSS"),
+            "\\b[A-Z]\\S{2} \\d{2}, \\d{4} @ \\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\b",
+            "\\b%{MONTH} %{MONTHDAY}, %{YEAR} @ %{HOUR}:%{MINUTE}:%{SECOND}\\b", CUSTOM_TIMESTAMP_GROK_NAME,
+            "    11  1111   11 11 11 111", 0, 0)
     );
 
     /**
@@ -275,13 +290,14 @@ public final class TimestampFormatFinder {
                         "ss".equals(prevLetterGroup) == false || endPos - startPos > 9) {
                         String msg = "Letter group [" + letterGroup + "] in [" + overrideFormat + "] is not supported";
                         if (curChar == 'S') {
-                            msg += " because it is not preceeded by [ss] and a separator from [" + FRACTIONAL_SECOND_SEPARATORS + "]";
+                            msg += " because it is not preceded by [ss] and a separator from [" + FRACTIONAL_SECOND_SEPARATORS + "]";
                         }
                         throw new IllegalArgumentException(msg);
                     }
-                    // No need to append to the Grok pattern as %{SECOND} already allows for an optional
-                    // fraction, but we need to remove the separator that's included in %{SECOND}
-                    grokPatternBuilder.deleteCharAt(grokPatternBuilder.length() - 1);
+                    // No need to append to the Grok pattern as %{SECOND} already allows for an optional fraction,
+                    // but we need to remove the separator that's included in %{SECOND} (and that might be escaped)
+                    int numCharsToDelete = (PUNCTUATION_THAT_NEEDS_ESCAPING_IN_REGEX.indexOf(prevChar) >= 0) ? 2 : 1;
+                    grokPatternBuilder.delete(grokPatternBuilder.length() - numCharsToDelete, grokPatternBuilder.length());
                     regexBuilder.append("\\d{").append(endPos - startPos).append('}');
                 } else {
                     grokPatternBuilder.append(grokPatternAndRegexForGroup.v1());
@@ -689,6 +705,20 @@ public final class TimestampFormatFinder {
     }
 
     /**
+     * This is needed to decide between "date" and "date_nanos" as the index mapping type.
+     * @return Do the observed timestamps require nanosecond precision to store accurately?
+     */
+    public boolean needNanosecondPrecision() {
+        if (matchedFormats.isEmpty()) {
+            // If errorOnNoTimestamp is set and we get here it means no samples have been added, which is likely a programmer mistake
+            assert errorOnNoTimestamp == false;
+            return false;
+        }
+        return matches.stream().filter(match -> matchedFormats.size() < 2 || matchedFormats.get(0).canMergeWith(match.timestampFormat))
+            .anyMatch(match -> match.hasNanosecondPrecision);
+    }
+
+    /**
      * Given a list of timestamp formats that might contain indeterminate day/month parts,
      * return the corresponding pattern with the placeholders replaced with concrete
      * day/month formats.
@@ -934,6 +964,14 @@ public final class TimestampFormatFinder {
     }
 
     /**
+     * The @timestamp field will always have been parsed into epoch format,
+     * so we just need to know if it has nanosecond resolution or not.
+     */
+    public Map<String, String> getEsDateMappingTypeWithoutFormat() {
+        return Collections.singletonMap(FileStructureUtils.MAPPING_TYPE_SETTING, needNanosecondPrecision() ? "date_nanos" : "date");
+    }
+
+    /**
      * Sometimes Elasticsearch mappings for dates need to include the format.
      * This method returns appropriate mappings settings: at minimum "type" : "date",
      * and possibly also a "format" setting.
@@ -945,7 +983,7 @@ public final class TimestampFormatFinder {
             return Collections.singletonMap(FileStructureUtils.MAPPING_TYPE_SETTING, "keyword");
         }
         Map<String, String> mapping = new LinkedHashMap<>();
-        mapping.put(FileStructureUtils.MAPPING_TYPE_SETTING, "date");
+        mapping.put(FileStructureUtils.MAPPING_TYPE_SETTING, needNanosecondPrecision() ? "date_nanos" : "date");
         String formats = javaTimestampFormats.stream().map(format -> {
             switch (format) {
                 case "ISO8601":
@@ -1219,6 +1257,7 @@ public final class TimestampFormatFinder {
         final int secondIndeterminateDateNumber;
 
         final boolean hasTimezoneDependentParsing;
+        final boolean hasNanosecondPrecision;
 
         /**
          * Text that came after the timestamp in the matched field/message.
@@ -1236,6 +1275,8 @@ public final class TimestampFormatFinder {
             this.secondIndeterminateDateNumber = indeterminateDateNumbers[1];
             this.hasTimezoneDependentParsing = requiresTimezoneDependentParsing(timestampFormat.rawJavaTimestampFormats.get(0),
                 matchedDate);
+            this.hasNanosecondPrecision = matchHasNanosecondPrecision(timestampFormat.rawJavaTimestampFormats.get(0),
+                matchedDate);
             this.epilogue = Objects.requireNonNull(epilogue);
         }
 
@@ -1245,6 +1286,7 @@ public final class TimestampFormatFinder {
             this.firstIndeterminateDateNumber = toCopyExceptFormat.firstIndeterminateDateNumber;
             this.secondIndeterminateDateNumber = toCopyExceptFormat.secondIndeterminateDateNumber;
             this.hasTimezoneDependentParsing = toCopyExceptFormat.hasTimezoneDependentParsing;
+            this.hasNanosecondPrecision = toCopyExceptFormat.hasNanosecondPrecision;
             this.epilogue = toCopyExceptFormat.epilogue;
         }
 
@@ -1268,6 +1310,43 @@ public final class TimestampFormatFinder {
                         }
                     }
                     return true;
+            }
+        }
+
+        static boolean matchHasNanosecondPrecision(String format, String matchedDate) {
+            switch (format) {
+                case "ISO8601":
+                    Matcher matcher = FRACTIONAL_SECOND_INTERPRETER.matcher(matchedDate);
+                    return matcher.find() && matcher.group(2).length() > 3;
+                case "UNIX_MS":
+                case "UNIX":
+                    return false;
+                case "TAI64N":
+                    return true;
+                default:
+                    boolean notQuoted = true;
+                    int consecutiveSs = 0;
+                    for (int pos = 0; pos < format.length(); ++pos) {
+                        char curChar = format.charAt(pos);
+                        if (curChar == '\'') {
+                            // Literal single quotes are escaped by using two consecutive single quotes.
+                            // Technically this code does the wrong thing in this case, as it flips quoting
+                            // from off to on or on to off and then back.  However, since by definition there
+                            // is nothing in between the consecutive single quotes in this case, the net
+                            // effect is correct and good enough for what this method is doing.
+                            notQuoted = !notQuoted;
+                            consecutiveSs = 0;
+                        } else if (notQuoted) {
+                            if (curChar == 'S') {
+                                if (++consecutiveSs > 3) {
+                                    return true;
+                                }
+                            } else {
+                                consecutiveSs = 0;
+                            }
+                        }
+                    }
+                    return false;
             }
         }
 
@@ -1354,7 +1433,6 @@ public final class TimestampFormatFinder {
      */
     static final class CandidateTimestampFormat {
 
-        private static final Pattern FRACTIONAL_SECOND_INTERPRETER = Pattern.compile("([" + FRACTIONAL_SECOND_SEPARATORS + "])(\\d{3,9})$");
         // This means that in the case of a literal Z, XXX is preferred
         private static final Pattern TRAILING_OFFSET_WITHOUT_COLON_FINDER = Pattern.compile("[+-]\\d{4}$");
 
@@ -1389,8 +1467,9 @@ public final class TimestampFormatFinder {
             this.strictGrokPattern = Objects.requireNonNull(strictGrokPattern);
             // The (?m) here has the Ruby meaning, which is equivalent to (?s) in Java
             this.strictSearchGrok = new Grok(Grok.getBuiltinPatterns(), "(?m)%{DATA:" + PREFACE + "}" + strictGrokPattern +
-                "%{GREEDYDATA:" + EPILOGUE + "}", TimeoutChecker.watchdog);
-            this.strictFullMatchGrok = new Grok(Grok.getBuiltinPatterns(), "^" + strictGrokPattern + "$", TimeoutChecker.watchdog);
+                "%{GREEDYDATA:" + EPILOGUE + "}", TimeoutChecker.watchdog, logger::warn);
+            this.strictFullMatchGrok = new Grok(Grok.getBuiltinPatterns(), "^" + strictGrokPattern + "$", TimeoutChecker.watchdog,
+                logger::warn);
             this.outputGrokPatternName = Objects.requireNonNull(outputGrokPatternName);
             this.quickRuleOutBitSets = quickRuleOutPatterns.stream().map(TimestampFormatFinder::stringToNumberPosBitSet)
                 .collect(Collectors.toList());
@@ -1466,7 +1545,7 @@ public final class TimestampFormatFinder {
         static List<String> expandDayAndAdjustFractionalSecondsFromExample(String example, String formatWithddAndNoFraction) {
 
             String formatWithdd = adjustFractionalSecondsFromEndOfExample(example, formatWithddAndNoFraction);
-            return Arrays.asList(formatWithdd, formatWithdd.replace(" dd", "  d"));
+            return Arrays.asList(formatWithdd, formatWithdd.replace(" dd", "  d"), formatWithdd.replace(" dd", " d"));
         }
 
         static List<String> indeterminateDayMonthFormatFromExample(String example) {

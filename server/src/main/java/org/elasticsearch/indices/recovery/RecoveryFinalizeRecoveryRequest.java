@@ -19,26 +19,40 @@
 
 package org.elasticsearch.indices.recovery;
 
+import org.elasticsearch.Version;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.index.seqno.SequenceNumbers;
 import org.elasticsearch.index.shard.ShardId;
-import org.elasticsearch.transport.TransportRequest;
 
 import java.io.IOException;
 
-public class RecoveryFinalizeRecoveryRequest extends TransportRequest {
+final class RecoveryFinalizeRecoveryRequest extends RecoveryTransportRequest {
 
-    private long recoveryId;
-    private ShardId shardId;
-    private long globalCheckpoint;
+    private final long recoveryId;
+    private final ShardId shardId;
+    private final long globalCheckpoint;
+    private final long trimAboveSeqNo;
 
-    public RecoveryFinalizeRecoveryRequest() {
+    RecoveryFinalizeRecoveryRequest(StreamInput in) throws IOException {
+        super(in);
+        recoveryId = in.readLong();
+        shardId = new ShardId(in);
+        globalCheckpoint = in.readZLong();
+        if (in.getVersion().onOrAfter(Version.V_7_4_0)) {
+            trimAboveSeqNo = in.readZLong();
+        } else {
+            trimAboveSeqNo = SequenceNumbers.UNASSIGNED_SEQ_NO;
+        }
     }
 
-    RecoveryFinalizeRecoveryRequest(final long recoveryId, final ShardId shardId, final long globalCheckpoint) {
+    RecoveryFinalizeRecoveryRequest(final long recoveryId, final long requestSeqNo, final ShardId shardId,
+                                    final long globalCheckpoint, final long trimAboveSeqNo) {
+        super(requestSeqNo);
         this.recoveryId = recoveryId;
         this.shardId = shardId;
         this.globalCheckpoint = globalCheckpoint;
+        this.trimAboveSeqNo = trimAboveSeqNo;
     }
 
     public long recoveryId() {
@@ -53,12 +67,8 @@ public class RecoveryFinalizeRecoveryRequest extends TransportRequest {
         return globalCheckpoint;
     }
 
-    @Override
-    public void readFrom(StreamInput in) throws IOException {
-        super.readFrom(in);
-        recoveryId = in.readLong();
-        shardId = new ShardId(in);
-        globalCheckpoint = in.readZLong();
+    public long trimAboveSeqNo() {
+        return trimAboveSeqNo;
     }
 
     @Override
@@ -67,6 +77,9 @@ public class RecoveryFinalizeRecoveryRequest extends TransportRequest {
         out.writeLong(recoveryId);
         shardId.writeTo(out);
         out.writeZLong(globalCheckpoint);
+        if (out.getVersion().onOrAfter(Version.V_7_4_0)) {
+            out.writeZLong(trimAboveSeqNo);
+        }
     }
 
 }

@@ -20,18 +20,21 @@ import org.elasticsearch.cluster.ClusterChangedEvent;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.ClusterStateListener;
 import org.elasticsearch.cluster.block.ClusterBlockLevel;
-import org.elasticsearch.cluster.metadata.IndexMetaData;
-import org.elasticsearch.cluster.metadata.IndexTemplateMetaData;
+import org.elasticsearch.cluster.metadata.IndexMetadata;
+import org.elasticsearch.cluster.metadata.IndexTemplateMetadata;
 import org.elasticsearch.cluster.routing.IndexRoutingTable;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.regex.Regex;
+import org.elasticsearch.common.settings.Setting;
+import org.elasticsearch.common.settings.Setting.Property;
 import org.elasticsearch.common.time.DateFormatter;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.gateway.GatewayService;
 import org.elasticsearch.index.IndexNotFoundException;
 import org.elasticsearch.ingest.IngestMetadata;
 import org.elasticsearch.ingest.PipelineConfiguration;
@@ -39,13 +42,14 @@ import org.elasticsearch.license.LicenseStateListener;
 import org.elasticsearch.license.XPackLicenseState;
 import org.elasticsearch.protocol.xpack.watcher.DeleteWatchRequest;
 import org.elasticsearch.protocol.xpack.watcher.PutWatchRequest;
-import org.elasticsearch.protocol.xpack.watcher.PutWatchResponse;
 import org.elasticsearch.xpack.core.XPackSettings;
 import org.elasticsearch.xpack.core.monitoring.MonitoredSystem;
 import org.elasticsearch.xpack.core.monitoring.exporter.MonitoringTemplateUtils;
-import org.elasticsearch.xpack.core.watcher.client.WatcherClient;
+import org.elasticsearch.xpack.core.watcher.transport.actions.delete.DeleteWatchAction;
+import org.elasticsearch.xpack.core.watcher.transport.actions.get.GetWatchAction;
 import org.elasticsearch.xpack.core.watcher.transport.actions.get.GetWatchRequest;
 import org.elasticsearch.xpack.core.watcher.transport.actions.get.GetWatchResponse;
+import org.elasticsearch.xpack.core.watcher.transport.actions.put.PutWatchAction;
 import org.elasticsearch.xpack.core.watcher.watch.Watch;
 import org.elasticsearch.xpack.monitoring.cleaner.CleanerService;
 import org.elasticsearch.xpack.monitoring.exporter.ClusterAlertsUtil;
@@ -85,6 +89,16 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
 
     public static final String TYPE = "local";
 
+    /**
+     * Time to wait for the master node to setup local exporter for monitoring.
+     * After that, the non-master nodes will warn the user for possible missing configuration.
+     */
+    public static final Setting.AffixSetting<TimeValue> WAIT_MASTER_TIMEOUT_SETTING = Setting.affixKeySetting(
+        "xpack.monitoring.exporters.",
+        "wait_master.timeout",
+        (key) -> Setting.timeSetting(key, TimeValue.timeValueSeconds(30), Property.Dynamic, Property.NodeScope), TYPE_DEPENDENCY
+    );
+
     private final Client client;
     private final ClusterService clusterService;
     private final XPackLicenseState licenseState;
@@ -95,8 +109,10 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
 
     private final AtomicReference<State> state = new AtomicReference<>(State.INITIALIZED);
     private final AtomicBoolean installingSomething = new AtomicBoolean(false);
-    private final AtomicBoolean waitedForSetup = new AtomicBoolean(false);
     private final AtomicBoolean watcherSetup = new AtomicBoolean(false);
+    private final AtomicBoolean stateInitialized = new AtomicBoolean(false);
+
+    private long stateInitializedTime;
 
     public LocalExporter(Exporter.Config config, Client client, CleanerService cleanerService) {
         super(config);
@@ -115,6 +131,13 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
 
     @Override
     public void clusterChanged(ClusterChangedEvent event) {
+        // Save the time right after the cluster state is initialized/recovered
+        // to use it later for LocalExporter#WAIT_MASTER_TIMEOUT_SETTING
+        if (event.state().blocks().hasGlobalBlock(GatewayService.STATE_NOT_RECOVERED_BLOCK) == false) {
+            if (stateInitialized.getAndSet(true) == false) {
+                stateInitializedTime = client.threadPool().relativeTimeInMillis();
+            }
+        }
         if (state.get() == State.INITIALIZED) {
             resolveBulk(event.state(), true);
         }
@@ -143,6 +166,17 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
     @Override
     public void openBulk(final ActionListener<ExportBulk> listener) {
         if (state.get() != State.RUNNING) {
+            // wait for some time before informing the user for possible missing x-pack configuration on master
+            final TimeValue masterTimeout = WAIT_MASTER_TIMEOUT_SETTING.getConcreteSettingForNamespace(config.name())
+                .get(config.settings());
+            TimeValue timeElapsed = TimeValue.timeValueMillis(client.threadPool().relativeTimeInMillis() - stateInitializedTime);
+            if (timeElapsed.compareTo(masterTimeout) > 0) {
+                logger.info(
+                    "waiting for elected master node [{}] to setup local exporter [{}] (does it have x-pack installed?)",
+                    clusterService.state().nodes().getMasterNode(),
+                    config.name()
+                );
+            }
             listener.onResponse(null);
         } else {
             try {
@@ -178,14 +212,8 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
         // elected master node needs to setup templates; non-master nodes need to wait for it to be setup
         if (clusterService.state().nodes().isLocalNodeElectedMaster()) {
             setup = setupIfElectedMaster(clusterState, templates, clusterStateChange);
-        } else if (setupIfNotElectedMaster(clusterState, templates.keySet()) == false) {
-            // the first pass will be false so that we don't bother users if the master took one-go to setup
-            if (waitedForSetup.getAndSet(true)) {
-                logger.info("waiting for elected master node [{}] to setup local exporter [{}] (does it have x-pack installed?)",
-                            clusterService.state().nodes().getMasterNode(), config.name());
-            }
-
-            setup = false;
+        } else {
+            setup = setupIfNotElectedMaster(clusterState, templates.keySet());
         }
 
         // any failure/delay to setup the local exporter stops it until the next pass (10s by default)
@@ -257,7 +285,7 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
             return false;
         }
 
-        if (installingSomething.get() == true) {
+        if (installingSomething.get()) {
             logger.trace("already installing something, waiting for install to complete");
             return false;
         }
@@ -355,7 +383,7 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
      */
     private boolean hasIngestPipeline(final ClusterState clusterState, final String pipelineId) {
         final String pipelineName = MonitoringTemplateUtils.pipelineName(pipelineId);
-        final IngestMetadata ingestMetadata = clusterState.getMetaData().custom(IngestMetadata.TYPE);
+        final IngestMetadata ingestMetadata = clusterState.getMetadata().custom(IngestMetadata.TYPE);
 
         // we ensure that we both have the pipeline and its version represents the current (or later) version
         if (ingestMetadata != null) {
@@ -395,12 +423,12 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
     }
 
     private boolean hasTemplate(final ClusterState clusterState, final String templateName) {
-        final IndexTemplateMetaData template = clusterState.getMetaData().getTemplates().get(templateName);
+        final IndexTemplateMetadata template = clusterState.getMetadata().getTemplates().get(templateName);
 
         return template != null && hasValidVersion(template.getVersion(), LAST_UPDATED_VERSION);
     }
 
-    // FIXME this should use the IndexTemplateMetaDataUpgrader
+    // FIXME this should use the IndexTemplateMetadataUpgrader
     private void putTemplate(String template, String source, ActionListener<AcknowledgedResponse> listener) {
         logger.debug("installing template [{}]", template);
 
@@ -430,8 +458,7 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
      */
     private void getClusterAlertsInstallationAsyncActions(final boolean indexExists, final List<Runnable> asyncActions,
                                                           final AtomicInteger pendingResponses) {
-        final WatcherClient watcher = new WatcherClient(client);
-        final boolean canAddWatches = licenseState.isMonitoringClusterAlertsAllowed();
+        final boolean canAddWatches = licenseState.checkFeature(XPackLicenseState.Feature.MONITORING_CLUSTER_ALERTS);
 
         for (final String watchId : ClusterAlertsUtil.WATCH_IDS) {
             final String uniqueWatchId = ClusterAlertsUtil.createUniqueWatchId(clusterService, watchId);
@@ -442,31 +469,30 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
                 if (addWatch) {
                     logger.trace("checking monitoring watch [{}]", uniqueWatchId);
 
-                    asyncActions.add(() -> watcher.getWatch(new GetWatchRequest(uniqueWatchId),
-                                                            new GetAndPutWatchResponseActionListener(watcher, watchId, uniqueWatchId,
+                    asyncActions.add(() -> client.execute(GetWatchAction.INSTANCE, new GetWatchRequest(uniqueWatchId),
+                                                            new GetAndPutWatchResponseActionListener(client, watchId, uniqueWatchId,
                                                                                                      pendingResponses)));
                 } else {
                     logger.trace("pruning monitoring watch [{}]", uniqueWatchId);
 
-                    asyncActions.add(() -> watcher.deleteWatch(new DeleteWatchRequest(uniqueWatchId),
+                    asyncActions.add(() -> client.execute(DeleteWatchAction.INSTANCE, new DeleteWatchRequest(uniqueWatchId),
                                                                new ResponseActionListener<>("watch", uniqueWatchId, pendingResponses)));
                 }
             } else if (addWatch) {
-                asyncActions.add(() -> putWatch(watcher, watchId, uniqueWatchId, pendingResponses));
+                asyncActions.add(() -> putWatch(client, watchId, uniqueWatchId, pendingResponses));
             }
         }
     }
 
-    private void putWatch(final WatcherClient watcher, final String watchId, final String uniqueWatchId,
+    private void putWatch(final Client client, final String watchId, final String uniqueWatchId,
                           final AtomicInteger pendingResponses) {
         final String watch = ClusterAlertsUtil.loadWatch(clusterService, watchId);
 
         logger.trace("adding monitoring watch [{}]", uniqueWatchId);
 
-        executeAsyncWithOrigin(client.threadPool().getThreadContext(), MONITORING_ORIGIN,
+        executeAsyncWithOrigin(client, MONITORING_ORIGIN, PutWatchAction.INSTANCE,
                 new PutWatchRequest(uniqueWatchId, new BytesArray(watch), XContentType.JSON),
-                new ResponseActionListener<PutWatchResponse>("watch", uniqueWatchId, pendingResponses, watcherSetup),
-                watcher::putWatch);
+                new ResponseActionListener<>("watch", uniqueWatchId, pendingResponses, watcherSetup));
     }
 
     /**
@@ -511,7 +537,7 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
                 currents.add(".monitoring-alerts-" + TEMPLATE_VERSION);
 
                 Set<String> indices = new HashSet<>();
-                for (ObjectObjectCursor<String, IndexMetaData> index : clusterState.getMetaData().indices()) {
+                for (ObjectObjectCursor<String, IndexMetadata> index : clusterState.getMetadata().indices()) {
                     String indexName =  index.key;
 
                     if (Regex.simpleMatch(indexPatterns, indexName)) {
@@ -614,15 +640,15 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
 
     private class GetAndPutWatchResponseActionListener implements ActionListener<GetWatchResponse> {
 
-        private final WatcherClient watcher;
+        private final Client client;
         private final String watchId;
         private final String uniqueWatchId;
         private final AtomicInteger countDown;
 
-        private GetAndPutWatchResponseActionListener(final WatcherClient watcher,
+        private GetAndPutWatchResponseActionListener(final Client client,
                                                      final String watchId, final String uniqueWatchId,
                                                      final AtomicInteger countDown) {
-            this.watcher = Objects.requireNonNull(watcher);
+            this.client = Objects.requireNonNull(client);
             this.watchId = Objects.requireNonNull(watchId);
             this.uniqueWatchId = Objects.requireNonNull(uniqueWatchId);
             this.countDown = Objects.requireNonNull(countDown);
@@ -636,7 +662,7 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
 
                 responseReceived(countDown, true, watcherSetup);
             } else {
-                putWatch(watcher, watchId, uniqueWatchId, countDown);
+                putWatch(client, watchId, uniqueWatchId, countDown);
             }
         }
 
@@ -650,6 +676,10 @@ public class LocalExporter extends Exporter implements ClusterStateListener, Cle
             }
         }
 
+    }
+
+    public static List<Setting.AffixSetting<?>> getSettings() {
+        return List.of(WAIT_MASTER_TIMEOUT_SETTING);
     }
 
 }
