@@ -27,7 +27,17 @@ import org.elasticsearch.gradle.ExportElasticsearchBuildResourcesTask
 import org.elasticsearch.gradle.RepositoriesSetupPlugin
 import org.elasticsearch.gradle.info.BuildParams
 import org.elasticsearch.gradle.info.GlobalBuildInfoPlugin
+import org.elasticsearch.gradle.precommit.CheckstylePrecommitPlugin
+import org.elasticsearch.gradle.precommit.FilePermissionsPrecommitPlugin
+import org.elasticsearch.gradle.precommit.ForbiddenApisPrecommitPlugin
+import org.elasticsearch.gradle.precommit.ForbiddenPatternsPrecommitPlugin
+import org.elasticsearch.gradle.precommit.JarHellPrecommitPlugin
+import org.elasticsearch.gradle.precommit.LicenseHeadersPrecommitPlugin
+import org.elasticsearch.gradle.precommit.LoggerUsagePrecommitPlugin
+import org.elasticsearch.gradle.precommit.PrecommitTaskPlugin
 import org.elasticsearch.gradle.precommit.PrecommitTasks
+import org.elasticsearch.gradle.precommit.TestingConventionsPrecommitPlugin
+import org.elasticsearch.gradle.precommit.ThirdPartyAuditPrecommitPlugin
 import org.elasticsearch.gradle.testclusters.TestClustersPlugin
 import org.gradle.api.InvalidUserDataException
 import org.gradle.api.Plugin
@@ -63,6 +73,17 @@ class StandaloneRestTestPlugin implements Plugin<Project> {
         project.pluginManager.apply(RepositoriesSetupPlugin)
         project.pluginManager.apply(RestTestBasePlugin)
 
+        project.pluginManager.apply(PrecommitTaskPlugin)
+        project.pluginManager.apply(CheckstylePrecommitPlugin)
+        project.pluginManager.apply(ForbiddenApisPrecommitPlugin)
+        project.pluginManager.apply(JarHellPrecommitPlugin)
+        project.pluginManager.apply(ForbiddenPatternsPrecommitPlugin)
+        project.pluginManager.apply(LicenseHeadersPrecommitPlugin)
+        project.pluginManager.apply(FilePermissionsPrecommitPlugin)
+        project.pluginManager.apply(ThirdPartyAuditPrecommitPlugin)
+        project.pluginManager.apply(TestingConventionsPrecommitPlugin)
+        project.pluginManager.apply(LoggerUsagePrecommitPlugin)
+
         project.getTasks().register("buildResources", ExportElasticsearchBuildResourcesTask)
         ElasticsearchJavaPlugin.configureInputNormalization(project)
         ElasticsearchJavaPlugin.configureCompile(project)
@@ -91,7 +112,5 @@ class StandaloneRestTestPlugin implements Plugin<Project> {
         IdeaModel idea = project.extensions.getByType(IdeaModel)
         idea.module.testSourceDirs += testSourceSet.java.srcDirs
         idea.module.scopes.put('TEST', [plus: [project.configurations.getByName(JavaPlugin.TEST_RUNTIME_CLASSPATH_CONFIGURATION_NAME)]] as Map<String, Collection<Configuration>>)
-
-        PrecommitTasks.create(project, false)
     }
 }

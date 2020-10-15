@@ -20,7 +20,17 @@ package org.elasticsearch.gradle
 
 import groovy.transform.CompileStatic
 import org.elasticsearch.gradle.info.GlobalBuildInfoPlugin
+import org.elasticsearch.gradle.precommit.CheckstylePrecommitPlugin
+import org.elasticsearch.gradle.precommit.DependencyLicensesPrecommitPlugin
+import org.elasticsearch.gradle.precommit.FilePermissionsPrecommitPlugin
+import org.elasticsearch.gradle.precommit.ForbiddenApisPrecommitPlugin
+import org.elasticsearch.gradle.precommit.ForbiddenPatternsPrecommitPlugin
+import org.elasticsearch.gradle.precommit.JarHellPrecommitPlugin
+import org.elasticsearch.gradle.precommit.LicenseHeadersPrecommitPlugin
+import org.elasticsearch.gradle.precommit.LoggerUsagePrecommitPlugin
 import org.elasticsearch.gradle.precommit.PrecommitTasks
+import org.elasticsearch.gradle.precommit.TestingConventionsPrecommitPlugin
+import org.elasticsearch.gradle.precommit.ThirdPartyAuditPrecommitPlugin
 import org.gradle.api.GradleException
 import org.gradle.api.InvalidUserDataException
 import org.gradle.api.Plugin
@@ -50,7 +60,16 @@ class BuildPlugin implements Plugin<Project> {
         project.pluginManager.apply('elasticsearch.publish')
         project.pluginManager.apply(DependenciesInfoPlugin)
 
-        PrecommitTasks.create(project, true)
+        project.pluginManager.apply(CheckstylePrecommitPlugin)
+        project.pluginManager.apply(ForbiddenApisPrecommitPlugin)
+        project.pluginManager.apply(JarHellPrecommitPlugin)
+        project.pluginManager.apply(ForbiddenPatternsPrecommitPlugin)
+        project.pluginManager.apply(LicenseHeadersPrecommitPlugin)
+        project.pluginManager.apply(FilePermissionsPrecommitPlugin)
+        project.pluginManager.apply(ThirdPartyAuditPrecommitPlugin)
+        project.pluginManager.apply(TestingConventionsPrecommitPlugin)
+        project.pluginManager.apply(DependencyLicensesPrecommitPlugin)
+        project.pluginManager.apply(LoggerUsagePrecommitPlugin)
     }
 
     static void configureLicenseAndNotice(Project project) {
