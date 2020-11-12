@@ -42,11 +42,11 @@ public class PluginBuildPluginTests extends GradleUnitTestCase {
     public void testApply() {
         // FIXME: distribution download plugin doesn't support running externally
         project.getExtensions().getExtraProperties().set("bwcVersions", Mockito.mock(BwcVersions.class));
-        project.getPlugins().apply(PluginBuildPlugin.class);
+        project.getPlugins().apply(PluginBuildPluginOld.class);
 
         assertNotNull(
             "plugin extension created with the right name",
-            project.getExtensions().findByName(PluginBuildPlugin.PLUGIN_EXTENSION_NAME)
+            project.getExtensions().findByName(PluginBuildPluginOld.PLUGIN_EXTENSION_NAME)
         );
         assertNotNull("plugin extensions has the right type", project.getExtensions().findByType(PluginPropertiesExtension.class));
 
@@ -56,7 +56,7 @@ public class PluginBuildPluginTests extends GradleUnitTestCase {
     @Ignore("https://github.com/elastic/elasticsearch/issues/47123")
     public void testApplyWithAfterEvaluate() {
         project.getExtensions().getExtraProperties().set("bwcVersions", Mockito.mock(BwcVersions.class));
-        project.getPlugins().apply(PluginBuildPlugin.class);
+        project.getPlugins().apply(PluginBuildPluginOld.class);
         PluginPropertiesExtension extension = project.getExtensions().getByType(PluginPropertiesExtension.class);
         extension.setNoticeFile(project.file("test.notice"));
         extension.setLicenseFile(project.file("test.license"));

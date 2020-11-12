@@ -43,7 +43,7 @@ import org.gradle.api.tasks.bundling.Zip
 /**
  * Encapsulates build configuration for an Elasticsearch plugin.
  */
-class PluginBuildPlugin implements Plugin<Project> {
+class PluginBuildPluginOld implements Plugin<Project> {
 
     public static final String PLUGIN_EXTENSION_NAME = 'esplugin'
 
@@ -80,6 +80,7 @@ class PluginBuildPlugin implements Plugin<Project> {
                 throw new InvalidUserDataException('name is a required setting for esplugin')
             }
             if (extension1.description == null) {
+                
                 throw new InvalidUserDataException('description is a required setting for esplugin')
             }
             if (extension1.type != PluginType.BOOTSTRAP && extension1.classname == null) {
@@ -167,7 +168,7 @@ class PluginBuildPlugin implements Plugin<Project> {
         TaskProvider<Task> copyPluginPropertiesTemplate = project.tasks.register('copyPluginPropertiesTemplate') {
             outputs.file(templateFile)
             doLast {
-                InputStream resourceTemplate = PluginBuildPlugin.getResourceAsStream("/${templateFile.name}")
+                InputStream resourceTemplate = PluginBuildPluginOld.getResourceAsStream("/${templateFile.name}")
                 templateFile.setText(resourceTemplate.getText('UTF-8'), 'UTF-8')
             }
         }
