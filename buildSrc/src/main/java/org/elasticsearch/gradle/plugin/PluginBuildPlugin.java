@@ -19,7 +19,9 @@
 
 package org.elasticsearch.gradle.plugin;
 
+import com.github.jengelman.gradle.plugins.shadow.ShadowPlugin;
 import nebula.plugin.publishing.maven.MavenPublishPlugin;
+import org.elasticsearch.gradle.NoticeTask;
 import org.elasticsearch.gradle.Version;
 import org.elasticsearch.gradle.VersionProperties;
 import org.elasticsearch.gradle.dependencies.CompileOnlyResolvePlugin;
@@ -29,6 +31,8 @@ import org.elasticsearch.gradle.test.RestTestBasePlugin;
 import org.elasticsearch.gradle.testclusters.ElasticsearchCluster;
 import org.elasticsearch.gradle.testclusters.RunTask;
 import org.elasticsearch.gradle.testclusters.TestClustersPlugin;
+import org.elasticsearch.gradle.util.GradleUtils;
+import org.elasticsearch.gradle.util.Util;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.NamedDomainObjectContainer;
 import org.gradle.api.Plugin;
@@ -44,10 +48,16 @@ import org.gradle.api.publish.maven.MavenPublication;
 import org.gradle.api.tasks.Copy;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.TaskProvider;
+import org.gradle.api.tasks.bundling.Zip;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Map;
+import java.util.concurrent.Callable;
 
 import static java.util.Map.entry;
 
@@ -179,67 +189,78 @@ public class PluginBuildPlugin implements Plugin<Project> {
             t.getOutputs().file(templateFile);
             t.doLast(task -> {
                 InputStream resourceTemplate = PluginBuildPlugin.class.getResourceAsStream("/" + templateFile.getName());
-                templateFile.setText(resourceTemplate.getText("UTF-8"), "UTF-8")
+                try {
+                    Files.copy(resourceTemplate, templateFile.toPath());
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
             });
         });
 
+        File generatedResources = new File(project.getBuildDir(), "generated-resources");
         TaskProvider<Copy> buildProperties = project.getTasks().register("pluginProperties", Copy.class);
         buildProperties.configure(t -> {
             t.dependsOn(copyPluginPropertiesTemplate);
             t.from(templateFile);
-            t.into(new File(project.buildDir, "generated-resources"));
+            t.into(generatedResources);
         });
 
         // add the plugin properties and metadata to test resources, so unit tests can
         // know about the plugin (used by test security code to statically initialize the plugin in unit tests)
-        SourceSet testSourceSet = project.sourceSets.test
-        testSourceSet.output.dir("${project.buildDir}/generated-resources", builtBy: buildProperties)
-        testSourceSet.resources.srcDir(pluginMetadata)*/
+        SourceSet testSourceSet = Util.getJavaTestSourceSet(project).get();
+        testSourceSet.getOutput().dir(Map.of("builtBy", buildProperties), generatedResources);
+        testSourceSet.getResources().srcDir(pluginMetadata);
 
         // create the actual bundle task, which zips up all the files for the plugin
-        /*TaskProvider<Zip> bundle = project.tasks.register('bundlePlugin', Zip) {
-            from buildProperties
-            from pluginMetadata // metadata (eg custom security policy)
+        TaskProvider<Zip> bundle = project.getTasks().register("bundlePlugin", Zip.class);
+        bundle.configure(t -> {
+            t.from(buildProperties);
+            t.from(pluginMetadata); // metadata (eg custom security policy)
             // If the plugin is using the shadow plugin then we need to bundle that shadow jar.
-            from { project.plugins.hasPlugin(ShadowPlugin) ? project.shadowJar : project.jar }
-            from project.configurations.runtimeClasspath - project.configurations.getByName(
+            t.from((Callable) () -> {
+                    final String taskname = project.getPlugins().hasPlugin(ShadowPlugin.class) ? "shadowJar" : "jar";
+                    return project.getTasks().named(taskname);
+                });
+
+            t.from(project.getConfigurations().getByName("runtimeClasspath").minus(project.getConfigurations().getByName(
                 CompileOnlyResolvePlugin.RESOLVEABLE_COMPILE_ONLY_CONFIGURATION_NAME
-            )
+            )));
             // extra files for the plugin to go into the zip
-            from('src/main/packaging') // TODO: move all config/bin/_size/etc into packaging
-            from('src/main') {
-                include 'config/**'
-                include 'bin/**'
-            }
-        }
+            t.from("src/main/packaging"); // TODO: move all config/bin/_size/etc into packaging
+            t.from("src/main", spec -> {
+                spec.include("config/**");
+                spec.include("bin/**");
+            });
+        });
         project.getTasks().named(BasePlugin.ASSEMBLE_TASK_NAME).configure(t -> t.dependsOn(bundle));
 
         // also make the zip available as a configuration (used when depending on this project)
         project.getConfigurations().create("zip");
-        project.getArtifacts().add("zip", bundle);*/
+        project.getArtifacts().add("zip", bundle);
     }
 
     /** Configure the pom for the main jar of this plugin */
 
     protected static void addNoticeGeneration(Project project, PluginPropertiesExtension extension) {
-        /*File licenseFile = extension.licenseFile
+        File licenseFile = extension.getLicenseFile();
         if (licenseFile != null) {
-            project.tasks.named('bundlePlugin').configure {
-                from(licenseFile.parentFile) {
-                    include(licenseFile.name)
-                    rename { 'LICENSE.txt' }
-                }
-            }
+            project.getTasks().named("bundlePlugin", Copy.class).configure(t -> {
+                t.from(licenseFile.getParentFile(), spec -> {
+                    spec.include(licenseFile.getName());
+                    spec.rename(name -> "LICENSE.txt");
+                });
+            });
         }
-        File noticeFile = extension.noticeFile
+        File noticeFile = extension.getNoticeFile();
         if (noticeFile != null) {
-            TaskProvider<NoticeTask> generateNotice = project.tasks.register('generateNotice', NoticeTask) {
-                inputFile = noticeFile
-                source(Util.getJavaMainSourceSet(project).get().allJava)
-            }
-            project.tasks.named('bundlePlugin').configure {
-                from(generateNotice)
-            }
-        }*/
+            TaskProvider<NoticeTask> generateNotice = project.getTasks().register("generateNotice", NoticeTask.class);
+            generateNotice.configure(t -> {
+                t.setInputFile(noticeFile);
+                t.source(Util.getJavaMainSourceSet(project).get().getAllJava());
+            });
+            project.getTasks().named("bundlePlugin", Copy.class).configure(t -> {
+                t.from(generateNotice);
+            });
+        }
     }
 }

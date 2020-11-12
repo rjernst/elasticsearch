@@ -19,7 +19,7 @@
 
 package org.elasticsearch.gradle.test
 
-import org.elasticsearch.gradle.plugin.PluginBuildPluginOld
+import org.elasticsearch.gradle.plugin.PluginBuildPlugin
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Dependency
@@ -46,7 +46,7 @@ class TestWithDependenciesPlugin implements Plugin<Project> {
 
         project.configurations.testImplementation.dependencies.all { Dependency dep ->
             // this closure is run every time a compile dependency is added
-            if (dep instanceof ProjectDependency && dep.dependencyProject.plugins.hasPlugin(PluginBuildPluginOld)) {
+            if (dep instanceof ProjectDependency && dep.dependencyProject.plugins.hasPlugin(PluginBuildPlugin)) {
                 project.gradle.projectsEvaluated {
                     addPluginResources(project, dep.dependencyProject)
                 }
