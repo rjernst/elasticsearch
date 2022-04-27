@@ -9,6 +9,7 @@ import org.elasticsearch.gradle.internal.info.BuildParams
  */
 apply plugin: 'elasticsearch.internal-yaml-rest-test'
 apply plugin: 'elasticsearch.yaml-rest-compat-test'
+apply plugin: 'elasticsearch.internal-test-artifact'
 
 esplugin {
   description 'Ingest processor that uses Apache Tika to extract contents'
@@ -23,6 +24,7 @@ versions << [
 ]
 
 dependencies {
+  api project(":plugins:ingest-attachment:spi")
   // mandatory for tika
   api "org.apache.tika:tika-core:${versions.tika}"
   // build against Jackson 2.9.5, but still works on our current version

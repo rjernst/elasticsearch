@@ -38,9 +38,11 @@ import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.security.ProtectionDomain;
 import java.security.SecurityPermission;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.PropertyPermission;
 import java.util.Set;
 
@@ -64,37 +66,38 @@ final class TikaImpl {
         )
     );
 
-    /** subset of parsers for types we support */
-    private static final Parser PARSERS[] = new Parser[] {
-        // documents
-        new org.apache.tika.parser.html.HtmlParser(),
-        new org.apache.tika.parser.rtf.RTFParser(),
-        new org.apache.tika.parser.pdf.PDFParser(),
-        new org.apache.tika.parser.txt.TXTParser(),
-        new org.apache.tika.parser.microsoft.OfficeParser(),
-        new org.apache.tika.parser.microsoft.OldExcelParser(),
-        ParserDecorator.withoutTypes(new org.apache.tika.parser.microsoft.ooxml.OOXMLParser(), EXCLUDES),
-        new org.apache.tika.parser.odf.OpenDocumentParser(),
-        new org.apache.tika.parser.iwork.IWorkPackageParser(),
-        new org.apache.tika.parser.xml.DcXMLParser(),
-        new org.apache.tika.parser.epub.EpubParser(), };
+    private final AutoDetectParser parserInstance;
+    private final Tika tikaInstance;
 
-    /** autodetector based on this subset */
-    private static final AutoDetectParser PARSER_INSTANCE = new AutoDetectParser(PARSERS);
+    TikaImpl(List<Parser> additionalParsers) {
+        List<Parser> parsers = new ArrayList<>(additionalParsers);
+        /** subset of parsers for types we support out-of-the-box */
+        parsers.addAll(List.of(// documents
+            new org.apache.tika.parser.html.HtmlParser(),
+            new org.apache.tika.parser.rtf.RTFParser(),
+            new org.apache.tika.parser.pdf.PDFParser(),
+            new org.apache.tika.parser.txt.TXTParser(),
+            new org.apache.tika.parser.microsoft.OfficeParser(),
+            new org.apache.tika.parser.microsoft.OldExcelParser(),
+            ParserDecorator.withoutTypes(new org.apache.tika.parser.microsoft.ooxml.OOXMLParser(), EXCLUDES),
+            new org.apache.tika.parser.odf.OpenDocumentParser(),
+            new org.apache.tika.parser.iwork.IWorkPackageParser(),
+            new org.apache.tika.parser.xml.DcXMLParser()));
 
-    /** singleton tika instance */
-    private static final Tika TIKA_INSTANCE = new Tika(PARSER_INSTANCE.getDetector(), PARSER_INSTANCE);
+        parserInstance = new AutoDetectParser(parsers.toArray(new Parser[0]));
+        tikaInstance = new Tika(parserInstance.getDetector(), parserInstance);
+    }
 
     /**
      * parses with tika, throwing any exception hit while parsing the document
      */
-    static String parse(final byte content[], final Metadata metadata, final int limit) throws TikaException, IOException {
+    String parse(final byte content[], final Metadata metadata, final int limit) throws TikaException, IOException {
         // check that its not unprivileged code like a script
         SpecialPermission.check();
 
         try {
             return AccessController.doPrivileged(
-                (PrivilegedExceptionAction<String>) () -> TIKA_INSTANCE.parseToString(new ByteArrayInputStream(content), metadata, limit),
+                (PrivilegedExceptionAction<String>) () -> tikaInstance.parseToString(new ByteArrayInputStream(content), metadata, limit),
                 RESTRICTED_CONTEXT
             );
         } catch (PrivilegedActionException e) {

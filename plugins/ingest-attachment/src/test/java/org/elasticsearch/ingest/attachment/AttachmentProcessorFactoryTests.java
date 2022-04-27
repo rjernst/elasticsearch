@@ -27,7 +27,7 @@ import static org.hamcrest.core.Is.is;
 
 public class AttachmentProcessorFactoryTests extends ESTestCase {
 
-    private AttachmentProcessor.Factory factory = new AttachmentProcessor.Factory();
+    private AttachmentProcessor.Factory factory = new AttachmentProcessor.Factory(List.of());
 
     public void testBuildDefaults() throws Exception {
         Map<String, Object> config = new HashMap<>();

@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -39,11 +40,14 @@ import static org.hamcrest.Matchers.nullValue;
 
 public class AttachmentProcessorTests extends ESTestCase {
 
+    private TikaImpl tika;
     private Processor processor;
 
     @Before
     public void createStandardProcessor() {
+        tika = new TikaImpl(List.of());
         processor = new AttachmentProcessor(
+            tika,
             randomAlphaOfLength(10),
             null,
             "source_field",
@@ -99,6 +103,7 @@ public class AttachmentProcessorTests extends ESTestCase {
             selectedProperties.add(AttachmentProcessor.Property.DATE);
         }
         processor = new AttachmentProcessor(
+            tika,
             randomAlphaOfLength(10),
             null,
             "source_field",
@@ -342,6 +347,7 @@ public class AttachmentProcessorTests extends ESTestCase {
         );
         IngestDocument ingestDocument = new IngestDocument(originalIngestDocument);
         processor = new AttachmentProcessor(
+            tika,
             randomAlphaOfLength(10),
             null,
             "source_field",
@@ -361,6 +367,7 @@ public class AttachmentProcessorTests extends ESTestCase {
         IngestDocument originalIngestDocument = RandomDocumentPicks.randomIngestDocument(random(), Collections.emptyMap());
         IngestDocument ingestDocument = new IngestDocument(originalIngestDocument);
         processor = new AttachmentProcessor(
+            tika,
             randomAlphaOfLength(10),
             null,
             "source_field",
@@ -383,6 +390,7 @@ public class AttachmentProcessorTests extends ESTestCase {
         );
         IngestDocument ingestDocument = new IngestDocument(originalIngestDocument);
         processor = new AttachmentProcessor(
+            tika,
             randomAlphaOfLength(10),
             null,
             "source_field",
@@ -402,6 +410,7 @@ public class AttachmentProcessorTests extends ESTestCase {
         IngestDocument originalIngestDocument = RandomDocumentPicks.randomIngestDocument(random(), Collections.emptyMap());
         IngestDocument ingestDocument = new IngestDocument(originalIngestDocument);
         processor = new AttachmentProcessor(
+            tika,
             randomAlphaOfLength(10),
             null,
             "source_field",
@@ -449,6 +458,7 @@ public class AttachmentProcessorTests extends ESTestCase {
 
     public void testIndexedChars() throws Exception {
         processor = new AttachmentProcessor(
+            tika,
             randomAlphaOfLength(10),
             null,
             "source_field",
@@ -470,6 +480,7 @@ public class AttachmentProcessorTests extends ESTestCase {
         assertThat(attachmentData.get("content_length"), is(19L));
 
         processor = new AttachmentProcessor(
+            tika,
             randomAlphaOfLength(10),
             null,
             "source_field",
@@ -510,6 +521,7 @@ public class AttachmentProcessorTests extends ESTestCase {
 
     public void testIndexedCharsWithResourceName() throws Exception {
         processor = new AttachmentProcessor(
+            tika,
             randomAlphaOfLength(10),
             null,
             "source_field",
@@ -564,6 +576,7 @@ public class AttachmentProcessorTests extends ESTestCase {
         {
             // Remove the binary field.
             processor = new AttachmentProcessor(
+                tika,
                 randomAlphaOfLength(10),
                 null,
                 "source_field",

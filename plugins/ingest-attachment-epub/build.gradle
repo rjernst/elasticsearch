@@ -1,0 +1,11 @@
+esplugin {
+  description 'Add epub support to Ingest attachment processor'
+  classname 'org.elasticsearch.ingest.attachment.epub.IngestAttachmentEpubPlugin'
+  extendedPlugins = ['ingest-attachment']
+}
+
+dependencies {
+  compileOnly project(':plugins:ingest-attachment:spi')
+  implementation "org.apache.tika:tika-parsers:${versions.tika}"
+  testImplementation testArtifact(project(":plugins:ingest-attachment"))
+}

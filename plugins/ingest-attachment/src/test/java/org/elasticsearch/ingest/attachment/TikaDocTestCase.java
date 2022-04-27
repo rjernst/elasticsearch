@@ -13,10 +13,12 @@ import org.apache.lucene.tests.util.TestUtil;
 import org.apache.tika.metadata.Metadata;
 import org.elasticsearch.core.PathUtils;
 import org.elasticsearch.test.ESTestCase;
+import org.junit.Before;
 
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Evil test-coverage cheat, we parse a bunch of docs from tika
@@ -24,18 +26,27 @@ import java.nio.file.Path;
  * comes back and no exception.
  */
 @SuppressFileSystems("ExtrasFS") // don't try to parse extraN
-public class TikaDocTests extends ESTestCase {
+public abstract class TikaDocTestCase extends ESTestCase {
 
-    /** some test files from tika test suite, zipped up */
-    static final String TIKA_FILES = "/org/elasticsearch/ingest/attachment/test/tika-files/";
+    TikaImpl tika;
+
+    @Before
+    public void setupTika() {
+        tika = new TikaImpl(List.of());
+    }
+
+    public abstract String getResourcePath();
+
+
 
     public void testFiles() throws Exception {
         Path tmp = createTempDir();
+        String tikaFiles = getResourcePath();
         logger.debug("unzipping all tika sample files");
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(PathUtils.get(getClass().getResource(TIKA_FILES).toURI()))) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(PathUtils.get(getClass().getResource(tikaFiles).toURI()))) {
             for (Path doc : stream) {
                 String filename = doc.getFileName().toString();
-                TestUtil.unzip(getClass().getResourceAsStream(TIKA_FILES + filename), tmp);
+                TestUtil.unzip(getClass().getResourceAsStream(tikaFiles + filename), tmp);
             }
         }
 
@@ -50,7 +61,7 @@ public class TikaDocTests extends ESTestCase {
     void assertParseable(Path fileName) throws Exception {
         try {
             byte bytes[] = Files.readAllBytes(fileName);
-            String parsedContent = TikaImpl.parse(bytes, new Metadata(), -1);
+            String parsedContent = tika.parse(bytes, new Metadata(), -1);
             assertNotNull(parsedContent);
             assertFalse(parsedContent.isEmpty());
             logger.debug("extracted content: {}", parsedContent);

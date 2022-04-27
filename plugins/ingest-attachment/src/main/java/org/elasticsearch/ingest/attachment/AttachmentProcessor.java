@@ -18,6 +18,7 @@ import org.elasticsearch.common.Strings;
 import org.elasticsearch.ingest.AbstractProcessor;
 import org.elasticsearch.ingest.IngestDocument;
 import org.elasticsearch.ingest.Processor;
+import org.elasticsearch.ingest.attachment.spi.TikaParserProvider;
 
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -40,6 +41,7 @@ public final class AttachmentProcessor extends AbstractProcessor {
 
     private static final int NUMBER_OF_CHARS_INDEXED = 100000;
 
+    private final TikaImpl tika;
     private final String field;
     private final String targetField;
     private final Set<Property> properties;
@@ -50,6 +52,7 @@ public final class AttachmentProcessor extends AbstractProcessor {
     private final String resourceName;
 
     AttachmentProcessor(
+        TikaImpl tika,
         String tag,
         String description,
         String field,
@@ -62,6 +65,7 @@ public final class AttachmentProcessor extends AbstractProcessor {
         boolean removeBinary
     ) {
         super(tag, description);
+        this.tika = tika;
         this.field = field;
         this.targetField = targetField;
         this.properties = properties;
@@ -113,7 +117,7 @@ public final class AttachmentProcessor extends AbstractProcessor {
         }
         String parsedContent = "";
         try {
-            parsedContent = TikaImpl.parse(input, metadata, indexedCharsValue);
+            parsedContent = tika.parse(input, metadata, indexedCharsValue);
         } catch (ZeroByteFileException e) {
             // tika 1.17 throws an exception when the InputStream has 0 bytes.
             // previously, it did not mind. This is here to preserve that behavior.
@@ -218,6 +222,12 @@ public final class AttachmentProcessor extends AbstractProcessor {
     public static final class Factory implements Processor.Factory {
 
         static final Set<Property> DEFAULT_PROPERTIES = EnumSet.allOf(Property.class);
+        final TikaImpl tika;
+
+        Factory(List<TikaParserProvider> parserProviders) {
+            var additionalParsers = parserProviders.stream().flatMap(p -> p.getParsers().stream()).toList();
+            this.tika = new TikaImpl(additionalParsers);
+        }
 
         @Override
         public AttachmentProcessor create(
@@ -255,6 +265,7 @@ public final class AttachmentProcessor extends AbstractProcessor {
             }
 
             return new AttachmentProcessor(
+                tika,
                 processorTag,
                 description,
                 field,
