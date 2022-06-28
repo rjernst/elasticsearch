@@ -8,6 +8,11 @@
 
 package org.elasticsearch.painless;
 
+import jdk.classfile.ClassBuilder;
+import jdk.classfile.Classfile;
+
+import jdk.classfile.TypeKind;
+
 import org.elasticsearch.SpecialPermission;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.painless.Compiler.Loader;
@@ -23,7 +28,11 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.GeneratorAdapter;
 
+import java.lang.constant.ClassDesc;
+import java.lang.constant.ConstantDescs;
+import java.lang.constant.MethodTypeDesc;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.AccessFlag;
 import java.lang.reflect.Method;
 import java.security.AccessControlContext;
 import java.security.AccessController;
@@ -272,84 +281,71 @@ public final class PainlessScriptEngine implements ScriptEngine {
      * @return A factory class that will return script instances.
      */
     private <T> T generateFactory(Loader loader, ScriptContext<T> context, Type classType, ScriptScope scriptScope) {
-        int classFrames = ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS;
-        int classAccess = Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER | Opcodes.ACC_FINAL;
-        String interfaceBase = Type.getType(context.factoryClazz).getInternalName();
+        String interfaceBase = context.factoryClazz.getName();
         String className = interfaceBase + "$Factory";
-        String[] classInterfaces = new String[] { interfaceBase };
+        final String classTypeDesc = classType.getDescriptor();
 
-        ClassWriter writer = new ClassWriter(classFrames);
-        writer.visit(WriterConstants.CLASS_VERSION, classAccess, className, null, OBJECT_TYPE.getInternalName(), classInterfaces);
-
-        org.objectweb.asm.commons.Method init = new org.objectweb.asm.commons.Method(
-            "<init>",
-            MethodType.methodType(void.class).toMethodDescriptorString()
-        );
-
-        GeneratorAdapter constructor = new GeneratorAdapter(
-            Opcodes.ASM5,
-            init,
-            writer.visitMethod(Opcodes.ACC_PUBLIC, init.getName(), init.getDescriptor(), null, null)
-        );
-        constructor.visitCode();
-        constructor.loadThis();
-        constructor.invokeConstructor(OBJECT_TYPE, init);
-        constructor.returnValue();
-        constructor.endMethod();
-
-        Method reflect = null;
-        Method docFieldsReflect = null;
+        Method r = null;
 
         for (Method method : context.factoryClazz.getMethods()) {
             if ("newInstance".equals(method.getName())) {
-                reflect = method;
+                r = method;
             } else if ("newFactory".equals(method.getName())) {
-                reflect = method;
+                r = method;
             }
         }
 
-        org.objectweb.asm.commons.Method instance = new org.objectweb.asm.commons.Method(
-            reflect.getName(),
-            MethodType.methodType(reflect.getReturnType(), reflect.getParameterTypes()).toMethodDescriptorString()
-        );
-        org.objectweb.asm.commons.Method constru = new org.objectweb.asm.commons.Method(
-            "<init>",
-            MethodType.methodType(void.class, reflect.getParameterTypes()).toMethodDescriptorString()
-        );
+        final Method reflect = r;
 
-        GeneratorAdapter adapter = new GeneratorAdapter(
-            Opcodes.ASM5,
-            instance,
-            writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, instance.getName(), instance.getDescriptor(), null, null)
-        );
-        adapter.visitCode();
-        adapter.newInstance(classType);
-        adapter.dup();
-        adapter.loadArgs();
-        adapter.invokeConstructor(classType, constru);
-        adapter.returnValue();
-        adapter.endMethod();
+        byte[] bytes = Classfile.build(ClassDesc.of(className), cb -> {
+            cb.withFlags(AccessFlag.PUBLIC, AccessFlag.FINAL, AccessFlag.SUPER)
+                .withInterfaceSymbols(ClassDesc.of(interfaceBase));
 
-        writeNeedsMethods(context.factoryClazz, writer, scriptScope.getUsedVariables());
+            cb.withMethod("<init>", MethodTypeDesc.of(ConstantDescs.CD_void), Classfile.ACC_PUBLIC, mb -> {
+                mb.withFlags(AccessFlag.PUBLIC);
+                mb.withCode(b -> b
+                    .aload(0)
+                    .invokespecial(ConstantDescs.CD_Object, "<init>", MethodTypeDesc.of(ConstantDescs.CD_void))
+                    .returnInstruction(TypeKind.VoidType)
+                );
+            });
 
-        String methodName = "isResultDeterministic";
-        org.objectweb.asm.commons.Method isResultDeterministic = new org.objectweb.asm.commons.Method(
-            methodName,
-            MethodType.methodType(boolean.class).toMethodDescriptorString()
-        );
+            cb.withMethod(reflect.getName(), MethodTypeDesc.ofDescriptor(
+                MethodType.methodType(reflect.getReturnType(), reflect.getParameterTypes()).descriptorString()),
+                Classfile.ACC_PUBLIC | Classfile.ACC_STATIC, mb -> {
+                    mb.withCode(b -> {b
+                            .new_(ClassDesc.of(classTypeDesc))
+                            .dup();
 
-        GeneratorAdapter deterAdapter = new GeneratorAdapter(
-            Opcodes.ASM5,
-            isResultDeterministic,
-            writer.visitMethod(Opcodes.ACC_PUBLIC, methodName, isResultDeterministic.getDescriptor(), null, null)
-        );
-        deterAdapter.visitCode();
-        deterAdapter.push(scriptScope.isDeterministic());
-        deterAdapter.returnValue();
-        deterAdapter.endMethod();
+                        int slot = 0;
+                        for (Class<?> clazz : reflect.getParameterTypes()) {
+                            TypeKind tk = TypeKind.fromDescriptor(clazz.descriptorString());
+                            b.loadInstruction(tk, slot);
+                            slot += tk.slotSize();
+                        }
 
-        writer.visitEnd();
-        Class<?> factory = loader.defineFactory(className.replace('/', '.'), writer.toByteArray());
+                        b.invokespecial(ClassDesc.of(classTypeDesc), "<init>",
+                            MethodTypeDesc.ofDescriptor(
+                                MethodType.methodType(reflect.getReturnType(), reflect.getParameterTypes()).descriptorString()))
+                            .returnInstruction(TypeKind.ReferenceType);
+                    });
+                });
+
+            writeNeedsMethods(context.factoryClazz, cb, scriptScope.getUsedVariables());
+
+            cb.withMethod("isResultDeterministic", MethodTypeDesc.of(ConstantDescs.CD_boolean), Classfile.ACC_PUBLIC, mb ->
+                mb.withCode(b -> {
+                    if (scriptScope.isDeterministic()) {
+                        b.iconst_1();
+                    } else {
+                        b.iconst_0();
+                    }
+
+                    b.returnInstruction(TypeKind.BooleanType);
+                }));
+        });
+
+        Class<?> factory = loader.defineFactory(className.replace('/', '.'), bytes);
 
         try {
             return context.factoryClazz.cast(factory.getConstructor().newInstance());
@@ -385,6 +381,31 @@ public final class PainlessScriptEngine implements ScriptEngine {
                 adapter.push(extractedVariables.contains(name));
                 adapter.returnValue();
                 adapter.endMethod();
+            }
+        }
+    }
+
+    private void writeNeedsMethods(Class<?> clazz, ClassBuilder classBuilder, Set<String> extractedVariables) {
+        for (Method method : clazz.getMethods()) {
+            if (method.getName().startsWith("needs")
+                && method.getReturnType().equals(boolean.class)
+                && method.getParameterTypes().length == 0) {
+                String n = method.getName();
+                n = n.substring(5);
+                n = Character.toLowerCase(n.charAt(0)) + n.substring(1);
+                final String name = n;
+
+                classBuilder.withMethod(method.getName(), MethodTypeDesc.of(ConstantDescs.CD_boolean), Classfile.ACC_PUBLIC, mb -> {
+                    mb.withCode(b -> {
+                        if (extractedVariables.contains(name)) {
+                            b.iconst_1();
+                        } else {
+                            b.iconst_0();
+                        }
+
+                        b.returnInstruction(TypeKind.BooleanType);
+                    });
+                });
             }
         }
     }

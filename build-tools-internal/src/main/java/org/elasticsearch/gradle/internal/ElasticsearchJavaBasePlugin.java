@@ -27,6 +27,7 @@ import org.gradle.api.tasks.compile.CompileOptions;
 import org.gradle.api.tasks.compile.GroovyCompile;
 import org.gradle.api.tasks.compile.JavaCompile;
 
+import java.io.File;
 import java.util.List;
 
 /**
@@ -128,6 +129,8 @@ public class ElasticsearchJavaBasePlugin implements Plugin<Project> {
             compilerArgs.add("-Xdoclint:-missing");
             compileOptions.setEncoding("UTF-8");
             compileOptions.setIncremental(true);
+            compileOptions.getForkOptions().setJavaHome(new File(System.getenv("JAVA_EXPERIMENTAL_HOME")));
+            compileOptions.setFork(true);
             // workaround for https://github.com/gradle/gradle/issues/14141
             compileTask.getConventionMapping().map("sourceCompatibility", () -> java.getSourceCompatibility().toString());
             compileTask.getConventionMapping().map("targetCompatibility", () -> java.getTargetCompatibility().toString());
