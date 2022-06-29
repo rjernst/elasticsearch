@@ -365,3 +365,13 @@ tasks.register("spotlessApply").configure {
   dependsOn gradle.includedBuild('build-tools').task(':reaper:spotlessApply')
   dependsOn gradle.includedBuild('build-tools-internal').task(':spotlessApply')
 }
+
+subprojects {
+  plugins.withType(JavaBasePlugin) {
+    java {
+      toolchain {
+        languageVersion = JavaLanguageVersion.of(20)
+      }
+    }
+  }
+}
