@@ -16,7 +16,13 @@ import org.elasticsearch.common.inject.Module;
 import org.elasticsearch.xcontent.XContentBuilder;
 import org.elasticsearch.xcontent.XContentType;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -70,16 +76,26 @@ public class SettingsModule implements Module {
         final Set<Setting<?>> registeredClusterSettings,
         final Set<Setting<?>> registeredIndexSettings
     ) {
+        BufferedWriter clusterSettingsWriter;
+        BufferedWriter indexSettingsWriter;
+        try {
+            Path logsDir = Paths.get(settings.get("path.logs"));
+            clusterSettingsWriter = Files.newBufferedWriter(logsDir.resolve("cluster-settings.csv"));
+            indexSettingsWriter = Files.newBufferedWriter(logsDir.resolve("index-settings.csv"));
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+
         this.settings = settings;
         for (Setting<?> setting : registeredClusterSettings) {
-            registerSetting(setting);
+            registerSetting(setting, clusterSettingsWriter, indexSettingsWriter);
         }
         for (Setting<?> setting : registeredIndexSettings) {
-            registerSetting(setting);
+            registerSetting(setting, clusterSettingsWriter, indexSettingsWriter);
         }
 
         for (Setting<?> setting : additionalSettings) {
-            registerSetting(setting);
+            registerSetting(setting, clusterSettingsWriter, indexSettingsWriter);
         }
         for (String filter : settingsFilter) {
             registerSettingsFilter(filter);
@@ -149,6 +165,14 @@ public class SettingsModule implements Module {
         // by now we are fully configured, lets check node level settings for unregistered index settings
         clusterSettings.validate(settings, true);
         this.settingsFilter = new SettingsFilter(settingsFilterPattern);
+
+        try {
+            clusterSettingsWriter.close();
+            indexSettingsWriter.close();
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+        if (true) throw new AssertionError("done writing settings");
     }
 
     @Override
@@ -164,7 +188,7 @@ public class SettingsModule implements Module {
      * Unless a setting is registered the setting is unusable. If a setting is never the less specified the node will reject
      * the setting during startup.
      */
-    private void registerSetting(Setting<?> setting) {
+    private void registerSetting(Setting<?> setting, BufferedWriter clusterSettingsWriter, BufferedWriter indexSettingsWriter) {
         if (setting.getKey().contains(".") == false && isS3InsecureCredentials(setting) == false) {
             throw new IllegalArgumentException("setting [" + setting.getKey() + "] is not in any namespace, its name must contain a dot");
         }
@@ -207,6 +231,24 @@ public class SettingsModule implements Module {
         } else {
             throw new IllegalArgumentException("No scope found for setting [" + setting.getKey() + "]");
         }
+
+        AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
+            try {
+                if (setting.getKey().equals("index.unassigned.node_left.delayed_timeout")) {
+                    assert setting.hasIndexScope();
+                }
+                if (setting.hasIndexScope()) {
+                    indexSettingsWriter.write(setting.getKey());
+                    indexSettingsWriter.write("\n");
+                } else {
+                    clusterSettingsWriter.write(setting.getKey());
+                    clusterSettingsWriter.write("\n");
+                }
+            } catch (IOException e) {
+                throw new AssertionError(e);
+            }
+            return null;
+        });
     }
 
     // TODO: remove this hack once we remove the deprecated ability to use repository settings in the cluster state in the S3 snapshot
