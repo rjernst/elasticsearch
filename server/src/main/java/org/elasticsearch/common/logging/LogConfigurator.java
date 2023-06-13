@@ -302,8 +302,13 @@ public class LogConfigurator {
     private static void configureLuceneFilter() {
         final LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
         Configuration configuration = ctx.getConfiguration();
-        LoggerConfig rootLogger = configuration.getRootLogger();
-        rootLogger.addFilter(new LuceneLogFilter());
+
+//        LoggerConfig rootLogger = configuration.getRootLogger();
+        LuceneLogFilter luceneLogFilter = new LuceneLogFilter();
+        for (String loggerName : LuceneLogFilter.getLoggerNames()) {
+            org.apache.logging.log4j.core.Logger logger = ctx.getLogger(loggerName);
+            configuration.addLoggerFilter(logger, luceneLogFilter);
+        }
 
         ctx.updateLoggers();
     }

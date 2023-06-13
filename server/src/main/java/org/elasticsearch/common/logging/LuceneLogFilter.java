@@ -21,6 +21,7 @@ import org.apache.logging.log4j.core.filter.AbstractFilter;
 import org.apache.logging.log4j.message.Message;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Filters messages from Lucene which may be confusing to users.
@@ -30,21 +31,26 @@ public class LuceneLogFilter extends AbstractFilter {
 
     private static final Map<String, String> RULES = Map.of(
         "org.apache.lucene.store.MemorySegmentIndexInputProvider", "Using MemorySegmentIndexInput",
-        "org.apache.lucene.util.VectorUtilProvider", "VectorUtilProvider lookup"//,
+        "org.apache.lucene.util.VectorUtilProvider", "VectorUtilProvider lookup",
+        "org.elasticsearch.plugins.PluginsService", "loaded module"
         //"org.apache.lucene.util.VectorUtilProvider", "WARNING: Java vector incubator module is not readable"
     );
+
+    public static Set<String> getLoggerNames(){
+        return RULES.keySet();
+    }
 
     public LuceneLogFilter() {
         super(Result.DENY, Result.ACCEPT);
     }
 
     private Result filter(String loggerName, Message msg) {
-        if(RULES.containsKey(loggerName)) {
+//        if(RULES.containsKey(loggerName)) {
             String message = RULES.get(loggerName);
             String formattedMessage = msg.getFormattedMessage();
             return formattedMessage.contains(message) ? Result.DENY : Result.ACCEPT;
-        }
-        return Result.ACCEPT;
+//        }
+//        return Result.ACCEPT;
     }
 
     @Override
