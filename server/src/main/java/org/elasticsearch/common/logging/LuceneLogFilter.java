@@ -39,7 +39,12 @@ public class LuceneLogFilter extends AbstractFilter {
     }
 
     private Result filter(String loggerName, Message msg) {
-        return Result.ACCEPT;//RULES.get(loggerName)
+        if(RULES.containsKey(loggerName)) {
+            String message = RULES.get(loggerName);
+            String formattedMessage = msg.getFormattedMessage();
+            return formattedMessage.contains(message) ? Result.DENY : Result.ACCEPT;
+        }
+        return Result.ACCEPT;
     }
 
     @Override
