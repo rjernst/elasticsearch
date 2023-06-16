@@ -16,11 +16,13 @@ import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.test.MockLogAppender;
 import org.elasticsearch.test.MockLogAppender.LoggingExpectation;
 import org.elasticsearch.test.MockLogAppender.SeenEventExpectation;
+import org.elasticsearch.test.MockLogAppender.UnseenEventExpectation;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 
 import java.util.logging.ConsoleHandler;
+import java.util.logging.LogRecord;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -109,6 +111,23 @@ public class JULBridgeTests extends ESTestCase {
         assertMessage("above info", julLevel(java.util.logging.Level.INFO.intValue() + 1), Level.INFO);
         assertMessage("above fine", julLevel(java.util.logging.Level.FINE.intValue() + 1), Level.DEBUG);
         assertMessage("above finest", julLevel(java.util.logging.Level.FINEST.intValue() + 1), Level.TRACE);
+    }
+
+    public void testEmptyMessage(){
+            JULBridge.install();
+
+            assertLogged(() -> {
+                    LogRecord record = new LogRecord(java.util.logging.Level.INFO, null);
+                    record.setLoggerName(logger.getName());
+                    logger.log(record);//the Logger.log method does not set logger name
+                },
+                new SeenEventExpectation("msg", "", Level.INFO, ""));
+    }
+    public void testWithParameters() {
+        JULBridge.install();
+
+        assertLogged(() -> logger.log(java.util.logging.Level.INFO, "{0},{1},{2},{3},{4},{5}", new Object[]{"a", "b", "c", 123, 'x'}),
+            new SeenEventExpectation("a,b,c,123,x", "", Level.INFO, "a,b,c,123,x"));
     }
 
     public void testThrowable() {
