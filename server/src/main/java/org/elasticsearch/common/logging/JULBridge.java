@@ -13,6 +13,8 @@ import org.elasticsearch.logging.Level;
 import org.elasticsearch.logging.LogManager;
 import org.elasticsearch.logging.Logger;
 
+import java.text.MessageFormat;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.logging.Handler;
@@ -22,7 +24,6 @@ import java.util.logging.LogRecord;
  * A Java Util Logging handler that writes log messages to the Elasticsearch logging framework.
  */
 class JULBridge extends Handler {
-
     private static final Map<java.util.logging.Level, Level> levelMap = Map.of(
         java.util.logging.Level.OFF,
         Level.OFF,
@@ -53,17 +54,22 @@ class JULBridge extends Handler {
         rootJulLogger.addHandler(new JULBridge());
     }
 
-    private JULBridge() {}
+    private JULBridge() {
+    }
 
     @Override
     public void publish(LogRecord record) {
         Logger logger = LogManager.getLogger(record.getLoggerName());
         Level level = translateJulLevel(record.getLevel());
         Throwable thrown = record.getThrown();
-        if (thrown == null) {
-            logger.log(level, record.getMessage());
+        if (record.getMessage() == null) {
+            logger.log(level, () -> "", thrown);
         } else {
-            logger.log(level, record::getMessage, thrown);
+            // exception handling as in https://github.com/qos-ch/slf4j/blob/master/jul-to-slf4j/src/main/java/org/slf4j/bridge/SLF4JBridgeHandler.java#L280
+            // ?
+            logger.log(level,
+                () -> new MessageFormat(record.getMessage(), Locale.ROOT).format(record.getParameters()),
+                thrown);
         }
     }
 
@@ -79,8 +85,10 @@ class JULBridge extends Handler {
     }
 
     @Override
-    public void flush() {}
+    public void flush() {
+    }
 
     @Override
-    public void close() {}
+    public void close() {
+    }
 }
