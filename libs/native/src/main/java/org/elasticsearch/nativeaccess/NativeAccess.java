@@ -53,6 +53,12 @@ public interface NativeAccess {
     Zstd getZstd();
 
     /**
+     * Returns an accessor to lz4 compression functions.
+     * @return an object used to compress and decompress bytes using lz4
+     */
+    Lz4 getLz4();
+
+    /**
      * Returns an accessor for native functions only available on Windows, or {@code null} if not on Windows.
      */
     default WindowsFunctions getWindowsFunctions() {

@@ -11,6 +11,7 @@ package org.elasticsearch.nativeaccess;
 import org.elasticsearch.logging.LogManager;
 import org.elasticsearch.logging.Logger;
 import org.elasticsearch.nativeaccess.lib.JavaLibrary;
+import org.elasticsearch.nativeaccess.lib.Lz4Library;
 import org.elasticsearch.nativeaccess.lib.NativeLibraryProvider;
 import org.elasticsearch.nativeaccess.lib.ZstdLibrary;
 
@@ -21,12 +22,14 @@ abstract class AbstractNativeAccess implements NativeAccess {
     private final String name;
     private final JavaLibrary javaLib;
     private final Zstd zstd;
+    private final Lz4 lz4;
     protected boolean isMemoryLocked = false;
 
     protected AbstractNativeAccess(String name, NativeLibraryProvider libraryProvider) {
         this.name = name;
         this.javaLib = libraryProvider.getLibrary(JavaLibrary.class);
         this.zstd = new Zstd(libraryProvider.getLibrary(ZstdLibrary.class));
+        this.lz4 = new Lz4(libraryProvider.getLibrary(Lz4Library.class));
     }
 
     String getName() {
@@ -41,6 +44,11 @@ abstract class AbstractNativeAccess implements NativeAccess {
     @Override
     public Zstd getZstd() {
         return zstd;
+    }
+
+    @Override
+    public Lz4 getLz4() {
+        return lz4;
     }
 
     @Override

@@ -18,6 +18,7 @@ configurations {
 }
 
 var zstdVersion = "1.5.5"
+var lz4Version = "1.9.4"
 var vecVersion = "1.0.9"
 
 repositories {
@@ -32,6 +33,7 @@ repositories {
     }
     filter {
       includeModule("org.elasticsearch", "zstd")
+      includeModule("org.elasticsearch", "lz4")
       includeModule("org.elasticsearch", "vec")
     }
   }
@@ -51,6 +53,7 @@ dependencies {
   libs "org.elasticsearch:zstd:${zstdVersion}:linux-aarch64"
   libs "org.elasticsearch:zstd:${zstdVersion}:linux-x86-64"
   libs "org.elasticsearch:zstd:${zstdVersion}:windows-x86-64"
+  libs "org.elasticsearch:lz4:${lz4Version}@zip"
   libs "org.elasticsearch:vec:${vecVersion}@zip" // temporarily comment this out, if testing a locally built native lib
 }
 

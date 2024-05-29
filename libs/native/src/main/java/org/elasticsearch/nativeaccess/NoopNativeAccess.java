@@ -54,6 +54,12 @@ class NoopNativeAccess implements NativeAccess {
     }
 
     @Override
+    public Lz4 getLz4() {
+        logger.warn("cannot compress with lz4 because native access is not available");
+        return null;
+    }
+
+    @Override
     public CloseableByteBuffer newBuffer(int len) {
         logger.warn("cannot allocate buffer because native access is not available");
         return null;
