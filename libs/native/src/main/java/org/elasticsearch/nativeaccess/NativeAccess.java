@@ -8,6 +8,7 @@
 
 package org.elasticsearch.nativeaccess;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -72,7 +73,7 @@ public interface NativeAccess {
      */
     OptionalLong allocatedSizeInBytes(Path path);
 
-    void tryPreallocate(Path file, long size);
+    void preallocate(Path file, long size) throws IOException;
 
     /**
      * Returns an accessor for native functions only available on Windows, or {@code null} if not on Windows.

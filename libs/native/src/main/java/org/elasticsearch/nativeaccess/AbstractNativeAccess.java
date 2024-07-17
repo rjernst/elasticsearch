@@ -14,6 +14,11 @@ import org.elasticsearch.nativeaccess.lib.JavaLibrary;
 import org.elasticsearch.nativeaccess.lib.NativeLibraryProvider;
 import org.elasticsearch.nativeaccess.lib.ZstdLibrary;
 
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 abstract class AbstractNativeAccess implements NativeAccess {
 
     protected static final Logger logger = LogManager.getLogger(NativeAccess.class);
@@ -58,5 +63,21 @@ abstract class AbstractNativeAccess implements NativeAccess {
     @Override
     public ExecSandboxState getExecSandboxState() {
         return execSandboxState;
+    }
+
+    @Override
+    public void preallocate(Path path, long fileSize) throws IOException {
+        // fallback implementation in Java when native allocation doesn't work
+        try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "rw")) {
+            if (raf.length() != fileSize) {
+                logger.info("pre-allocating file [{}] ({} bytes) using setLength method", path, fileSize);
+                raf.setLength(fileSize);
+                logger.debug("pre-allocated file [{}] using setLength method", path);
+            }
+        } catch (final Exception e) {
+            logger.warn(() -> "failed to pre-allocate file [" + path + "] using setLength method", e);
+            // if anything goes wrong, delete the potentially created file to not waste disk space
+            Files.deleteIfExists(path);
+        }
     }
 }

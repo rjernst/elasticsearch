@@ -21,7 +21,7 @@ public class PreallocateTests extends ESTestCase {
         Path file = createTempFile();
         long size = 1024 * 1024; // 1 MB
         var nativeAccess = NativeAccess.instance();
-        nativeAccess.tryPreallocate(file, size);
+        nativeAccess.preallocate(file, size);
         OptionalLong foundSize = nativeAccess.allocatedSizeInBytes(file);
         assertTrue(foundSize.isPresent());
         // Note that on Windows the fallback setLength is used. Although that creates a sparse

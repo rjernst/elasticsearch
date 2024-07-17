@@ -12,6 +12,7 @@ import org.elasticsearch.nativeaccess.lib.NativeLibraryProvider;
 import org.elasticsearch.nativeaccess.lib.PosixCLibrary;
 import org.elasticsearch.nativeaccess.lib.VectorLibrary;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -148,26 +149,28 @@ abstract class PosixNativeAccess extends AbstractNativeAccess {
     }
 
     @Override
-    public void tryPreallocate(Path file, long newSize) {
+    public void preallocate(Path file, long newSize) throws IOException {
         // get fd and current size, then pass to OS variant
         int fd = libc.open(file.toAbsolutePath().toString(), O_WRONLY, constants.O_CREAT());
         if (fd == -1) {
             logger.warn("Could not open file [" + file + "] to preallocate size: " + libc.strerror(libc.errno()));
-            return;
-        }
-
-        var stats = libc.newStat64(constants.statStructSize(), constants.statStructSizeOffset(), constants.statStructBlocksOffset());
-        if (libc.fstat64(fd, stats) != 0) {
-            logger.warn("Could not get stats for file [" + file + "] to preallocate size: " + libc.strerror(libc.errno()));
         } else {
-            if (nativePreallocate(fd, stats.st_size(), newSize)) {
-                logger.debug("pre-allocated file [{}] to {} bytes", file, newSize);
-            } // OS specific preallocate logs its own errors
+            var stats = libc.newStat64(constants.statStructSize(), constants.statStructSizeOffset(), constants.statStructBlocksOffset());
+            if (libc.fstat64(fd, stats) != 0) {
+                logger.warn("Could not get stats for file [" + file + "] to preallocate size: " + libc.strerror(libc.errno()));
+            } else {
+                if (nativePreallocate(fd, stats.st_size(), newSize)) {
+                    logger.debug("pre-allocated file [{}] to {} bytes", file, newSize);
+                } // OS specific preallocate logs its own errors
+            }
+
+            if (libc.close(fd) != 0) {
+                logger.warn("Could not close file [" + file + "] after trying to preallocate size: " + libc.strerror(libc.errno()));
+            }
         }
 
-        if (libc.close(fd) != 0) {
-            logger.warn("Could not close file [" + file + "] after trying to preallocate size: " + libc.strerror(libc.errno()));
-        }
+        // always call fallback in case anything goes wrong, it will be a noop if allocation was successful
+        super.preallocate(file, newSize);
     }
 
     protected abstract boolean nativePreallocate(int fd, long currentSize, long newSize);
