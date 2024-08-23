@@ -60,6 +60,7 @@ class CliToolLauncher {
         command = CliToolProvider.load(toolname, libs).create();
         Terminal terminal = Terminal.DEFAULT;
         Runtime.getRuntime().addShutdownHook(createShutdownHook(terminal, command));
+        Thread parentWatcher = createParentWatcher(terminal);
 
         int exitCode = command.main(args, terminal, pinfo);
         terminal.flush(); // make sure nothing is left in buffers
@@ -95,7 +96,18 @@ class CliToolLauncher {
             }
             terminal.flush(); // make sure to flush whatever the close or error might have written
         }, "elasticsearch-cli-shutdown");
+    }
 
+    // creates a thread that watchers for parent death by blocking on a read from stdin
+    static Thread createParentWatcher(Terminal terminal) {
+        return new Thread(() -> {
+            try {
+                terminal.getInputStream().read();
+            } catch (final IOException e) {
+                terminal.errorPrintln("Parent of cli process died unexpectedly");
+                exit(1);
+            }
+        }, "elasticsearch-cli-parent-watcher");
     }
 
     @SuppressForbidden(reason = "System#exit")

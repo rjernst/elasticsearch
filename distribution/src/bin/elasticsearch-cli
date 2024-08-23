@@ -2,6 +2,15 @@
 
 set -e -o pipefail
 
+echo "Running Elasticsearch CLI script"
+
+handle_sigterm() {
+  echo "Shell received SIGTERM"
+  exit 0
+}
+
+trap handle_sigterm SIGTERM
+
 source "`dirname "$0"`"/elasticsearch-env
 
 # use a small heap size for the CLI tools, and thus the serial collector to
@@ -10,6 +19,7 @@ CLI_JAVA_OPTS="-Xms4m -Xmx64m -XX:+UseSerialGC ${CLI_JAVA_OPTS}"
 
 LAUNCHER_CLASSPATH=$ES_HOME/lib/*:$ES_HOME/lib/cli-launcher/*
 
+echo "Executing Java CLI $CLI_NAME"
 exec \
   "$JAVA" \
   $CLI_JAVA_OPTS \
