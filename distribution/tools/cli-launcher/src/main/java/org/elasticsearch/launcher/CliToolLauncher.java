@@ -89,6 +89,7 @@ class CliToolLauncher {
 
     static Thread createShutdownHook(Terminal terminal, Closeable closeable) {
         return new Thread(() -> {
+            terminal.println("Shutting down");
             try {
                 closeable.close();
             } catch (final IOException e) {
