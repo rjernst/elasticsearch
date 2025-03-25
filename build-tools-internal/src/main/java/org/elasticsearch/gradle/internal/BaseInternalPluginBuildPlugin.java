@@ -11,16 +11,24 @@ package org.elasticsearch.gradle.internal;
 
 import groovy.lang.Closure;
 
+import org.elasticsearch.gradle.VersionProperties;
 import org.elasticsearch.gradle.internal.conventions.util.Util;
 import org.elasticsearch.gradle.internal.info.BuildParameterExtension;
 import org.elasticsearch.gradle.internal.precommit.JarHellPrecommitPlugin;
 import org.elasticsearch.gradle.internal.test.ClusterFeaturesMetadataPlugin;
+import org.elasticsearch.gradle.plugin.GenerateBundleManifestTask;
 import org.elasticsearch.gradle.plugin.PluginBuildPlugin;
 import org.elasticsearch.gradle.plugin.PluginPropertiesExtension;
 import org.elasticsearch.gradle.util.GradleUtils;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.dsl.DependencyHandler;
+import org.gradle.api.file.FileCollection;
+import org.gradle.api.plugins.JavaPlugin;
+import org.gradle.api.tasks.SourceSet;
 
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -78,6 +86,26 @@ public class BaseInternalPluginBuildPlugin implements Plugin<Project> {
         if (isModule == false || isXPackModule) {
             addNoticeGeneration(project, extension);
         }
+
+        final var genBundleManifest = project.getTasks().register("generateBundleManifest", GenerateBundleManifestTask.class, t -> {
+
+            SourceSet mainSourceSet = GradleUtils.getJavaSourceSets(project).findByName(SourceSet.MAIN_SOURCE_SET_NAME);
+            FileCollection dependencyJars = project.getConfigurations().getByName(JavaPlugin.COMPILE_CLASSPATH_CONFIGURATION_NAME);
+            FileCollection compiledPluginClasses = mainSourceSet.getOutput().getClassesDirs();
+            FileCollection classPath = dependencyJars.plus(compiledPluginClasses);
+            t.setClasspath(classPath);
+        });
+        Configuration pluginScannerConfig = project.getConfigurations().create("pluginScannerConfig");
+        DependencyHandler dependencyHandler = project.getDependencies();
+        pluginScannerConfig.defaultDependencies(
+            deps -> deps.add(
+                dependencyHandler.create(dependencyHandler.project(Map.of("path", ":libs:plugin-scanner")))
+            )
+        );
+        genBundleManifest.configure(t -> { t.setPluginScannerClasspath(pluginScannerConfig); });
+
+        final var pluginExtension = project.getExtensions().getByType(PluginPropertiesExtension.class);
+        pluginExtension.getBundleSpec().from(genBundleManifest);
     }
 
     /**

@@ -963,6 +963,8 @@ class NodeConstruction {
             List<?> componentObjects = allItems.stream().filter(not(x -> x instanceof Class<?>)).toList();
             List<? extends Class<?>> classes = allItems.stream().filter(x -> x instanceof Class<?>).map(x -> (Class<?>) x).toList();
 
+            // TODO: find classes from bundle manifest
+
             // Then, injection
             Collection<?> componentsFromInjector;
             if (classes.isEmpty()) {
