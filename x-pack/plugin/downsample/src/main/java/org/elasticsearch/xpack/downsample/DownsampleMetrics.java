@@ -8,6 +8,7 @@
 package org.elasticsearch.xpack.downsample;
 
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
+import org.elasticsearch.plugin.Component;
 import org.elasticsearch.telemetry.TelemetryProvider;
 import org.elasticsearch.telemetry.metric.MeterRegistry;
 
@@ -26,6 +27,7 @@ import java.util.Map;
  *  - Register it in method {@link #doStart}.
  *  - Add a function for recording its value.
  */
+@Component
 public class DownsampleMetrics extends AbstractLifecycleComponent {
 
     public static final String LATENCY_SHARD = "es.tsdb.downsample.latency.shard.histogram";

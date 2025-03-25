@@ -62,7 +62,7 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
      * @param descriptor Metadata about the plugin, usually loaded from plugin properties
      * @param instance The constructed instance of the plugin's main class
      */
-    record LoadedPlugin(PluginDescriptor descriptor, Plugin instance, ClassLoader classLoader) {
+    record LoadedPlugin(PluginDescriptor descriptor, Plugin instance, BundleInfo bundle, ClassLoader classLoader) {
 
         LoadedPlugin {
             Objects.requireNonNull(descriptor);
@@ -184,6 +184,10 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
      */
     public final <T> Stream<T> flatMap(Function<Plugin, Collection<T>> function) {
         return plugins().stream().map(LoadedPlugin::instance).flatMap(p -> function.apply(p).stream());
+    }
+
+    public final <T> Stream<T> flatMapBundle(Function<BundleInfo, Collection<T>> function) {
+        return plugins().stream().map(LoadedPlugin::bundle).flatMap(p -> function.apply(p).stream());
     }
 
     /**
@@ -398,7 +402,9 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
             privilegedSetContextClassLoader(pluginLayer.pluginClassLoader());
 
             Plugin plugin;
+            BundleManifest manifest;
             if (pluginBundle.pluginDescriptor().isStable()) {
+                manifest = BundleManifest.EMPTY;
                 stablePluginsRegistry.scanBundleForStablePlugins(pluginBundle, pluginClassLoader);
                 /*
                 Contrary to old plugins we don't need an instance of the plugin here.
@@ -425,8 +431,10 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
                     );
                 }
                 plugin = loadPlugin(pluginClass, settings, configPath);
+
+                manifest = BundleManifest.load(pluginBundle.getDir());
             }
-            loadedPlugins.put(name, new LoadedPlugin(pluginBundle.plugin, plugin, pluginLayer.pluginClassLoader()));
+            loadedPlugins.put(name, new LoadedPlugin(pluginBundle.plugin, plugin, new BundleInfo(manifest, plugin), pluginLayer.pluginClassLoader()));
         } finally {
             privilegedSetContextClassLoader(cl);
         }

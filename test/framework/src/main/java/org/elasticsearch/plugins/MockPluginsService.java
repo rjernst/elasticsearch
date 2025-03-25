@@ -65,10 +65,17 @@ public class MockPluginsService extends PluginsService {
             if (logger.isTraceEnabled()) {
                 logger.trace("plugin loaded from classpath [{}]", pluginInfo);
             }
-            pluginsLoaded.add(new LoadedPlugin(pluginInfo, plugin, MockPluginsService.class.getClassLoader()));
+            var bundle = new BundleInfo(BundleManifest.EMPTY, plugin);
+            pluginsLoaded.add(new LoadedPlugin(pluginInfo, plugin, bundle, MockPluginsService.class.getClassLoader()));
         }
         loadExtensions(pluginsLoaded);
         this.classpathPlugins = List.copyOf(pluginsLoaded);
+    }
+
+    private static BundleManifest loadManifest(Plugin plugin) {
+        var codeSource = plugin.getClass().getProtectionDomain().getCodeSource();
+        System.out.println("Plugin " + plugin.getClass().getName() + ": " + codeSource.getLocation());
+        return BundleManifest.EMPTY;
     }
 
     @Override

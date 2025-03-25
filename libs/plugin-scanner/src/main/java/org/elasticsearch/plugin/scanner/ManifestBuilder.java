@@ -38,7 +38,7 @@ public class ManifestBuilder {
         try (OutputStream outputStream = Files.newOutputStream(outputFile)) {
             try (XContentBuilder namedComponents = XContentFactory.jsonBuilder(outputStream)) {
                 namedComponents.startObject();
-                namedComponents.array("components", components);
+                namedComponents.array("components", components.toArray(new String[0]));
                 namedComponents.endObject();
             }
         }
@@ -47,7 +47,8 @@ public class ManifestBuilder {
 
     public static List<String> findComponents(List<ClassReader> classReaders) {
 
-        ClassScanner componentScanner = new ClassScanner(Type.getDescriptor(Component.class), (classname, map) -> {
+        ClassScanner componentScanner = new ClassScanner(Type.getDescriptor(Component.class), (path, map) -> {
+            String classname = pathToClassName(path);
             map.put(classname, classname);
             return null;
         });

@@ -958,12 +958,21 @@ class NodeConstruction {
             slowLogFieldProvider
         );
 
-        Collection<?> pluginComponents = pluginsService.flatMap(plugin -> {
+        Collection<?> pluginComponents = pluginsService.flatMapBundle(bundle -> {
+            Plugin plugin = bundle.instance();
             Collection<?> allItems = plugin.createComponents(pluginServices);
             List<?> componentObjects = allItems.stream().filter(not(x -> x instanceof Class<?>)).toList();
-            List<? extends Class<?>> classes = allItems.stream().filter(x -> x instanceof Class<?>).map(x -> (Class<?>) x).toList();
 
-            // TODO: find classes from bundle manifest
+            ClassLoader loader = plugin.getClass().getClassLoader();
+            List<Class<?>> classes = new ArrayList<>();
+            for (String componentClassname : bundle.manifest().componentClasses()) {
+                try {
+                    classes.add(loader.loadClass(componentClassname));
+                } catch (ClassNotFoundException e) {
+                    // should not be possible, all classes were discovered within the bundle
+                    throw new AssertionError(e);
+                }
+            }
 
             // Then, injection
             Collection<?> componentsFromInjector;
