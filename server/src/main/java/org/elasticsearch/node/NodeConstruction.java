@@ -230,7 +230,11 @@ import org.elasticsearch.xcontent.NamedXContentRegistry;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.invoke.LambdaConversionException;
 import java.lang.invoke.LambdaMetafactory;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -594,31 +598,29 @@ class NodeConstruction {
                         Class<NamedWriteable> categoryClass = (Class<NamedWriteable>) bundleInfo.getClass(entry.categoryClass());
 
                         Class<?> implementationClass = bundleInfo.getClass(entry.implementationClass());
-                        
-                        Writeable.Reader<? extends NamedWriteable> reader;
+
+                        MethodType methodType = MethodType.methodType(NamedWriteable.class, StreamInput.class);
+                        MethodHandles.Lookup lookup = MethodHandles.publicLookup();
+                        MethodHandle mh;
                         try {
                             if (entry.factoryMethod().equals("<init>")) {
-                                var ctor = implementationClass.getConstructor(StreamInput.class);
-                                reader = input -> {
-                                    try {
-                                        return (NamedWriteable) ctor.newInstance(input);
-                                    } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
-                                        throw new RuntimeException(e);
-                                    }
-                                };
+                                mh = lookup.findConstructor(implementationClass, methodType);
                             } else {
-                                var method = implementationClass.getMethod(entry.factoryMethod(), StreamInput.class);
-                                reader = input -> {
-                                    try {
-                                        return (NamedWriteable) method.invoke(null, input);
-                                    } catch (IllegalAccessException | InvocationTargetException e) {
-                                        throw new RuntimeException(e);
-                                    }
-                                };
+                                mh = lookup.findStatic(implementationClass, entry.factoryMethod(), methodType);
                             }
-                        } catch (NoSuchMethodException e) {
-                            throw new AssertionError(e);
+                        } catch (NoSuchMethodException | IllegalAccessException e) {
+                            throw new RuntimeException(e);
                         }
+                        Writeable.Reader<? extends NamedWriteable> reader;
+                        try {
+                            reader = (Writeable.Reader<? extends NamedWriteable>)
+                                LambdaMetafactory.metafactory(lookup, "read",
+                                    MethodType.methodType(Writeable.Reader.class), methodType.generic(),
+                                    mh, methodType).getTarget().invokeExact();
+                        } catch (Throwable e) {
+                            throw new RuntimeException(e);
+                        }
+
                         logger.info("POTATO Entry: " + categoryClass + ", " + entry.name());
                         return new NamedWriteableRegistry.Entry(categoryClass, entry.name(), reader);
                     }).toList();
