@@ -979,7 +979,7 @@ class NodeConstruction {
             if (classes.isEmpty()) {
                 componentsFromInjector = Set.of();
             } else {
-                logger.debug("Using injector to instantiate classes for {}: {}", plugin.getClass().getSimpleName(), classes);
+                logger.info("Using injector to instantiate classes for {}: {}", plugin.getClass().getSimpleName(), classes);
                 var injector = org.elasticsearch.injection.Injector.create();
                 injector.addInstances(componentObjects);
                 addRecordContents(injector, pluginServices);
