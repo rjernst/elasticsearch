@@ -19,22 +19,30 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.BiFunction;
 
 public class ClassScanner {
     private final Map<String, String> foundClasses;
     private final AnnotatedHierarchyVisitor annotatedHierarchyVisitor;
 
-    public ClassScanner(String targetAnnotation, BiFunction<String, Map<String, String>, AnnotationVisitor> biConsumer) {
+    private ClassReader reader;
+
+    public interface AnnotationConsumer {
+        AnnotationVisitor visit(String classname, ClassReader classReader, Map<String, String> map);
+    }
+
+    public ClassScanner(String targetAnnotation, AnnotationConsumer consumer) {
         this.foundClasses = new HashMap<>();
         this.annotatedHierarchyVisitor = new AnnotatedHierarchyVisitor(
             targetAnnotation,
-            classname -> biConsumer.apply(classname, foundClasses)
+            classname -> consumer.visit(classname, reader, foundClasses)
         );
     }
 
     public void visit(List<ClassReader> classReaders) {
-        classReaders.forEach(classReader -> classReader.accept(annotatedHierarchyVisitor, ClassReader.SKIP_CODE));
+        classReaders.forEach(classReader -> {
+            reader = classReader;
+            classReader.accept(annotatedHierarchyVisitor, ClassReader.SKIP_CODE);
+        });
         addExtensibleDescendants(annotatedHierarchyVisitor.getClassHierarchy());
     }
 

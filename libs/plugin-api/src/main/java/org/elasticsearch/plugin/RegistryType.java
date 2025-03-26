@@ -7,20 +7,14 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.common.io.stream;
+package org.elasticsearch.plugin;
 
-import org.elasticsearch.plugin.RegistryType;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
-/**
- * A {@link Writeable} object identified by its name.
- * To be used for arbitrary serializable objects (e.g. queries); when reading them, their name tells
- * which specific object needs to be created.
- */
-@RegistryType
-public interface NamedWriteable extends Writeable {
-
-    /**
-     * Returns the name of the writeable object
-     */
-    String getWriteableName();
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ ElementType.TYPE })
+public @interface RegistryType {
 }

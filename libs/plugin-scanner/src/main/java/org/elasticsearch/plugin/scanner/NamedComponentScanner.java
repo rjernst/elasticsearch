@@ -59,7 +59,7 @@ public class NamedComponentScanner {
 
     // returns a Map<String, Map<String,String> - extensible interface -> map{ namedName -> className }
     public static Map<String, Map<String, String>> scanForNamedClasses(List<ClassReader> classReaders) {
-        ClassScanner extensibleClassScanner = new ClassScanner(Type.getDescriptor(Extensible.class), (classname, map) -> {
+        ClassScanner extensibleClassScanner = new ClassScanner(Type.getDescriptor(Extensible.class), (classname, reader, map) -> {
             map.put(classname, classname);
             return null;
         });
@@ -67,7 +67,7 @@ public class NamedComponentScanner {
 
         ClassScanner namedComponentsScanner = new ClassScanner(
             Type.getDescriptor(NamedComponent.class),
-            (classname, map) -> new AnnotationVisitor(Opcodes.ASM9) {
+            (classname, reader, map) -> new AnnotationVisitor(Opcodes.ASM9) {
                 @Override
                 public void visit(String key, Object value) {
                     assert key.equals("value");

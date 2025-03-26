@@ -120,7 +120,7 @@ public class Downsample extends Plugin implements ActionPlugin, PersistentTaskPl
         );
     }
 
-    @Override
+    /*@Override
     public List<NamedWriteableRegistry.Entry> getNamedWriteables() {
         return List.of(
             new NamedWriteableRegistry.Entry(
@@ -130,5 +130,5 @@ public class Downsample extends Plugin implements ActionPlugin, PersistentTaskPl
             ),
             new NamedWriteableRegistry.Entry(PersistentTaskParams.class, DownsampleShardTaskParams.NAME, DownsampleShardTaskParams::new)
         );
-    }
+    }*/
 }

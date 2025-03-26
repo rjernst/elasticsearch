@@ -11,7 +11,6 @@ package org.elasticsearch.gradle.internal;
 
 import groovy.lang.Closure;
 
-import org.elasticsearch.gradle.VersionProperties;
 import org.elasticsearch.gradle.internal.conventions.util.Util;
 import org.elasticsearch.gradle.internal.info.BuildParameterExtension;
 import org.elasticsearch.gradle.internal.precommit.JarHellPrecommitPlugin;
@@ -28,7 +27,6 @@ import org.gradle.api.file.FileCollection;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.tasks.AbstractCopyTask;
 import org.gradle.api.tasks.SourceSet;
-import org.gradle.jvm.tasks.Jar;
 
 import java.util.Map;
 import java.util.Optional;
@@ -100,18 +98,14 @@ public class BaseInternalPluginBuildPlugin implements Plugin<Project> {
         Configuration pluginScannerConfig = project.getConfigurations().create("pluginScannerConfig");
         DependencyHandler dependencyHandler = project.getDependencies();
         pluginScannerConfig.defaultDependencies(
-            deps -> deps.add(
-                dependencyHandler.create(dependencyHandler.project(Map.of("path", ":libs:plugin-scanner")))
-            )
+            deps -> deps.add(dependencyHandler.create(dependencyHandler.project(Map.of("path", ":libs:plugin-scanner"))))
         );
         genBundleManifest.configure(t -> { t.setPluginScannerClasspath(pluginScannerConfig); });
 
         final var pluginExtension = project.getExtensions().getByType(PluginPropertiesExtension.class);
         pluginExtension.getBundleSpec().from(genBundleManifest);
 
-        project.getTasks().named("processResources", AbstractCopyTask.class).configure(task -> {
-            task.from(genBundleManifest);
-        });
+        project.getTasks().named("processResources", AbstractCopyTask.class).configure(task -> { task.from(genBundleManifest); });
     }
 
     /**

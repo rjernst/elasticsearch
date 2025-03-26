@@ -434,7 +434,10 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
 
                 manifest = BundleManifest.load(pluginBundle.getDir());
             }
-            loadedPlugins.put(name, new LoadedPlugin(pluginBundle.plugin, plugin, new BundleInfo(manifest, plugin), pluginLayer.pluginClassLoader()));
+            loadedPlugins.put(
+                name,
+                new LoadedPlugin(pluginBundle.plugin, plugin, new BundleInfo(manifest, plugin), pluginLayer.pluginClassLoader())
+            );
         } finally {
             privilegedSetContextClassLoader(cl);
         }

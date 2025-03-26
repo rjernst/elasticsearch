@@ -8,9 +8,12 @@
 package org.elasticsearch.xpack.core.downsample;
 
 import org.apache.lucene.util.BytesRef;
+import org.elasticsearch.common.io.stream.NamedWriteable;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.persistent.PersistentTaskState;
+import org.elasticsearch.plugin.RegistryCtor;
+import org.elasticsearch.plugin.RegistryEntry;
 import org.elasticsearch.xcontent.ObjectParser;
 import org.elasticsearch.xcontent.ParseField;
 import org.elasticsearch.xcontent.XContentBuilder;
@@ -23,6 +26,7 @@ import java.io.IOException;
  *                                     the downsample task
  * @param tsid The latest successfully processed tsid component of a tuple (tsid, timestamp)
  */
+@RegistryEntry(name = DownsampleShardPersistentTaskState.NAME, category = PersistentTaskState.class, type = NamedWriteable.class)
 public record DownsampleShardPersistentTaskState(DownsampleShardIndexerStatus downsampleShardIndexerStatus, BytesRef tsid)
     implements
         PersistentTaskState {
@@ -48,6 +52,7 @@ public record DownsampleShardPersistentTaskState(DownsampleShardIndexerStatus do
         );
     }
 
+    @RegistryCtor
     public DownsampleShardPersistentTaskState(final StreamInput in) throws IOException {
         this(DownsampleShardIndexerStatus.readFromStream(in), in.readBytesRef());
     }

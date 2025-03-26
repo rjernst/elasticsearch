@@ -66,7 +66,10 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.cluster.version.CompatibilityVersions;
 import org.elasticsearch.common.breaker.CircuitBreaker;
 import org.elasticsearch.common.component.LifecycleComponent;
+import org.elasticsearch.common.io.stream.NamedWriteable;
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry;
+import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.logging.DeprecationCategory;
 import org.elasticsearch.common.logging.DeprecationLogger;
 import org.elasticsearch.common.logging.DynamicContextDataProvider;
@@ -227,6 +230,8 @@ import org.elasticsearch.xcontent.NamedXContentRegistry;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.invoke.LambdaMetafactory;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -578,7 +583,46 @@ class NodeConstruction {
                 searchModule.getNamedWriteables().stream(),
                 pluginsService.flatMap(Plugin::getNamedWriteables),
                 ClusterModule.getNamedWriteables().stream(),
-                SystemIndexMigrationExecutor.getNamedWriteables().stream()
+                SystemIndexMigrationExecutor.getNamedWriteables().stream(),
+                pluginsService.flatMapBundle(bundleInfo -> {
+                    var entries = bundleInfo.manifest().registries().get(NamedWriteable.class.toString());
+                    if (entries == null) {
+                        return List.of();
+                    }
+                    return entries.stream().map(entry -> {
+                        @SuppressWarnings("unchecked")
+                        Class<NamedWriteable> categoryClass = (Class<NamedWriteable>) bundleInfo.getClass(entry.categoryClass());
+
+                        Class<?> implementationClass = bundleInfo.getClass(entry.implementationClass());
+                        
+                        Writeable.Reader<? extends NamedWriteable> reader;
+                        try {
+                            if (entry.factoryMethod().equals("<init>")) {
+                                var ctor = implementationClass.getConstructor(StreamInput.class);
+                                reader = input -> {
+                                    try {
+                                        return (NamedWriteable) ctor.newInstance(input);
+                                    } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                };
+                            } else {
+                                var method = implementationClass.getMethod(entry.factoryMethod(), StreamInput.class);
+                                reader = input -> {
+                                    try {
+                                        return (NamedWriteable) method.invoke(null, input);
+                                    } catch (IllegalAccessException | InvocationTargetException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                };
+                            }
+                        } catch (NoSuchMethodException e) {
+                            throw new AssertionError(e);
+                        }
+                        logger.info("POTATO Entry: " + categoryClass + ", " + entry.name());
+                        return new NamedWriteableRegistry.Entry(categoryClass, entry.name(), reader);
+                    }).toList();
+                })
             ).flatMap(Function.identity()).toList()
         );
         xContentRegistry = new NamedXContentRegistry(
