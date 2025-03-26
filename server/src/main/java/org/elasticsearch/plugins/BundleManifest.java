@@ -13,6 +13,7 @@ import org.elasticsearch.xcontent.XContentParserConfiguration;
 import org.elasticsearch.xcontent.json.JsonXContent;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,19 +29,25 @@ public record BundleManifest(List<String> componentClasses) {
     public static BundleManifest load(Path dir) {
         Path manifestPath = dir.resolve(FILENAME);
         if (Files.exists(manifestPath)) {
-            try (var input = Files.newInputStream(manifestPath);
-                 var parser = JsonXContent.jsonXContent.createParser(XContentParserConfiguration.EMPTY, input)) {
-
-                Map<String, Object> manifestMap = parser.map();
-
-                @SuppressWarnings("unchecked")
-                List<String> components = (List<String>) manifestMap.get("components");
-
-                return new BundleManifest(components);
+            try (var stream = Files.newInputStream(manifestPath)) {
+                return load(stream);
             } catch (IOException e){
                 throw new UncheckedIOException(e);
             }
         }
         return EMPTY;
+    }
+
+    public static BundleManifest load(InputStream stream) {
+        try (var parser = JsonXContent.jsonXContent.createParser(XContentParserConfiguration.EMPTY, stream)) {
+
+            Map<String, Object> manifestMap = parser.map();
+            @SuppressWarnings("unchecked")
+            List<String> components = (List<String>) manifestMap.get("components");
+
+            return new BundleManifest(components);
+        } catch (IOException e){
+            throw new UncheckedIOException(e);
+        }
     }
 }

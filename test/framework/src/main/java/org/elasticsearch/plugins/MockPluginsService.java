@@ -15,13 +15,21 @@ import org.elasticsearch.Build;
 import org.elasticsearch.action.admin.cluster.node.info.PluginsAndModules;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.ConcurrentCollections;
+import org.elasticsearch.core.PathUtils;
 import org.elasticsearch.env.Environment;
 import org.elasticsearch.plugins.spi.SPIClassIterator;
 
+import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -46,6 +54,31 @@ public class MockPluginsService extends PluginsService {
 
         List<LoadedPlugin> pluginsLoaded = new ArrayList<>();
 
+        Map<String, BundleManifest> manifests = new HashMap<>();
+        try {
+            Enumeration<URL> resources = MockPluginsService.class.getClassLoader().getResources("bundle-manifest.json");
+            for (var itr = resources.asIterator(); itr.hasNext(); ) {
+                URL bundleUrl = itr.next();
+                URI uri = bundleUrl.toURI();
+                String key;
+                if (uri.getScheme().equals("jar")) {
+                    uri = URI.create(uri.getSchemeSpecificPart().split("!")[0]);
+                    key = uri.toString();
+                } else {
+                    assert uri.getScheme().equals("file");
+                    int buildDirPath = uri.toString().indexOf("/build/resources/main/bundle-manifest.json");
+                    key = uri.toString().substring(0, buildDirPath);
+                }
+                logger.info("Found manifest in {}", key);
+                try (var stream = bundleUrl.openStream()) {
+                    var manifest = BundleManifest.load(stream);
+                    manifests.put(key, manifest);
+                }
+            }
+        } catch (IOException|URISyntaxException e) {
+            throw new AssertionError(e);
+        }
+
         for (Class<? extends Plugin> pluginClass : classpathPlugins) {
             Plugin plugin = loadPlugin(pluginClass, settings, environment.configDir());
             PluginDescriptor pluginInfo = new PluginDescriptor(
@@ -65,17 +98,29 @@ public class MockPluginsService extends PluginsService {
             if (logger.isTraceEnabled()) {
                 logger.trace("plugin loaded from classpath [{}]", pluginInfo);
             }
-            var bundle = new BundleInfo(BundleManifest.EMPTY, plugin);
+            BundleManifest manifest;
+            try {
+                logger.info("Plugin {}: {}", plugin.getClass().getName(), plugin.getClass().getProtectionDomain().getCodeSource().getLocation());
+                URI locationUri = plugin.getClass().getProtectionDomain().getCodeSource().getLocation().toURI();
+                String key = locationUri.toString();
+                if (key.endsWith(".jar") == false) {
+                    int buildDirIndex = locationUri.toString().indexOf("/build/classes/java/main/");
+                    key = locationUri.toString().substring(0, buildDirIndex);
+                }
+                logger.info("Looking for plugin manifest in {}", key);
+                manifest = manifests.get(key);
+                if (manifest == null) {
+                    logger.info("No manifest found");
+                    manifest = BundleManifest.EMPTY;
+                }
+            } catch (URISyntaxException e) {
+                throw new AssertionError(e);
+            }
+            var bundle = new BundleInfo(manifest, plugin);
             pluginsLoaded.add(new LoadedPlugin(pluginInfo, plugin, bundle, MockPluginsService.class.getClassLoader()));
         }
         loadExtensions(pluginsLoaded);
         this.classpathPlugins = List.copyOf(pluginsLoaded);
-    }
-
-    private static BundleManifest loadManifest(Plugin plugin) {
-        var codeSource = plugin.getClass().getProtectionDomain().getCodeSource();
-        System.out.println("Plugin " + plugin.getClass().getName() + ": " + codeSource.getLocation());
-        return BundleManifest.EMPTY;
     }
 
     @Override

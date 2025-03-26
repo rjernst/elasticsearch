@@ -26,7 +26,9 @@ import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.plugins.JavaPlugin;
+import org.gradle.api.tasks.AbstractCopyTask;
 import org.gradle.api.tasks.SourceSet;
+import org.gradle.jvm.tasks.Jar;
 
 import java.util.Map;
 import java.util.Optional;
@@ -106,6 +108,10 @@ public class BaseInternalPluginBuildPlugin implements Plugin<Project> {
 
         final var pluginExtension = project.getExtensions().getByType(PluginPropertiesExtension.class);
         pluginExtension.getBundleSpec().from(genBundleManifest);
+
+        project.getTasks().named("processResources", AbstractCopyTask.class).configure(task -> {
+            task.from(genBundleManifest);
+        });
     }
 
     /**
