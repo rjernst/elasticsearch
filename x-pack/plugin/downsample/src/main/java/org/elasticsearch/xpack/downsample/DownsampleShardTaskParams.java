@@ -11,6 +11,7 @@ import org.elasticsearch.TransportVersion;
 import org.elasticsearch.TransportVersions;
 import org.elasticsearch.action.downsample.DownsampleConfig;
 import org.elasticsearch.common.Strings;
+import org.elasticsearch.common.io.stream.NamedWriteable;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.index.shard.ShardId;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Objects;
 
 @RegistryEntry(name = DownsampleShardTaskParams.NAME, category = PersistentTaskParams.class, type = XContent.class)
+@RegistryEntry(name = DownsampleShardTaskParams.NAME, category = PersistentTaskParams.class, type = NamedWriteable.class)
 public record DownsampleShardTaskParams(
     DownsampleConfig downsampleConfig,
     String downsampleIndex,

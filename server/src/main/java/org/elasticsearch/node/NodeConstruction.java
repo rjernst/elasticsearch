@@ -161,6 +161,7 @@ import org.elasticsearch.persistent.PersistentTasksExecutorRegistry;
 import org.elasticsearch.persistent.PersistentTasksService;
 import org.elasticsearch.plugins.ActionPlugin;
 import org.elasticsearch.plugins.AnalysisPlugin;
+import org.elasticsearch.plugins.BundleManifest;
 import org.elasticsearch.plugins.CircuitBreakerPlugin;
 import org.elasticsearch.plugins.ClusterCoordinationPlugin;
 import org.elasticsearch.plugins.ClusterPlugin;
@@ -1799,8 +1800,25 @@ class NodeConstruction {
             .map(p -> p.getPersistentTasksExecutor(clusterService, threadPool, client, settingsModule, indexNameExpressionResolver))
             .flatMap(List::stream);
 
+        Stream<PersistentTasksExecutor<?>> injectedTaskExecutors = pluginsService.flatMapBundle(bundleInfo -> {
+            var peristentTaskImpls = bundleInfo.manifest().namedComponents().get(PersistentTasksExecutor.class);
+            if (peristentTaskImpls == null) {
+                return List.of();
+            }
+            var classes = peristentTaskImpls.stream().map(BundleManifest.NamedComponentInfo::implementationClass)
+                .map(bundleInfo::getClass).toList();
+            var injector = org.elasticsearch.injection.Injector.create();
+            injector.addInstance(client);
+            injector.addInstance(threadPool);
+            var resultMap = injector.inject(classes);
+            List<PersistentTasksExecutor<?>> results = new ArrayList<>();
+            resultMap.values().stream().forEach(o -> results.add((PersistentTasksExecutor<?>)o));
+            return results;
+        });
+
+
         PersistentTasksExecutorRegistry registry = new PersistentTasksExecutorRegistry(
-            Stream.concat(pluginTaskExecutors, builtinTaskExecutors).toList()
+            Stream.of(pluginTaskExecutors, builtinTaskExecutors, injectedTaskExecutors).flatMap(Function.identity()).toList()
         );
         PersistentTasksClusterService persistentTasksClusterService = new PersistentTasksClusterService(
             settingsModule.getSettings(),

@@ -278,7 +278,7 @@ public class PersistentTasksNodeService implements ClusterStateListener {
                 taskInProgress.getTaskName() + "[c]",
                 new PersistentTaskAwareRequest<>(
                     taskInProgress,
-                    new PersistentTaskStartupFailureExecutor<>(executor.getTaskName(), EsExecutors.DIRECT_EXECUTOR_SERVICE)
+                    new PersistentTaskStartupFailureExecutor<>(taskInProgress.getTaskName(), EsExecutors.DIRECT_EXECUTOR_SERVICE)
                 )
             );
             placeholderTask.init(persistentTasksService, taskManager, taskInProgress.getId(), taskInProgress.getAllocationId());

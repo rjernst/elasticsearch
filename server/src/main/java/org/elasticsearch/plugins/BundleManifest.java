@@ -24,12 +24,14 @@ import java.util.stream.Collectors;
 import static java.util.Map.entry;
 import static org.elasticsearch.xcontent.XContentParserConfiguration.EMPTY;
 
-public record BundleManifest(List<String> componentClasses, Map<String, List<RegistryEntryInfo>> registries) {
+public record BundleManifest(List<String> componentClasses, Map<String, List<RegistryEntryInfo>> registries, Map<String, List<NamedComponentInfo>> namedComponents) {
 
     private static final String FILENAME = "bundle-manifest.json";
-    public static final BundleManifest EMPTY = new BundleManifest(List.of(), Map.of());
+    public static final BundleManifest EMPTY = new BundleManifest(List.of(), Map.of(), Map.of());
 
     public record RegistryEntryInfo(String implementationClass, String categoryClass, String name, String factoryMethod) {}
+
+    public record NamedComponentInfo(String implementationClass, String name) {}
 
     public static BundleManifest load(Path dir) {
         Path manifestPath = dir.resolve(FILENAME);
@@ -54,15 +56,28 @@ public record BundleManifest(List<String> componentClasses, Map<String, List<Reg
             Map<String, List<Map<String, String>>> untypedRegistries = (Map<String, List<Map<String, String>>>) manifestMap.get(
                 "registries"
             );
-            var registries = untypedRegistries.entrySet().stream().map(e -> entry(e.getKey(), e.getValue().stream().map(v -> {
+            var registries = untypedRegistries.entrySet().stream().map(e ->
+                entry(e.getKey(),
+                    e.getValue().stream().map(v -> {
+                        String implementationClass = v.get("impl");
+                        String categoryClass = v.get("category");
+                        String name = v.get("name");
+                        String factoryMethod = v.get("factoryMethod");
+                        return new RegistryEntryInfo(implementationClass, categoryClass, name, factoryMethod);
+                    }).toList())
+            ).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+            @SuppressWarnings("unchecked")
+            Map<String, List<Map<String, String>>> untypedNamedComponents = (Map<String, List<Map<String, String>>>) manifestMap.get(
+                "namedComponents"
+            );
+            var namedComponents = untypedNamedComponents.entrySet().stream().map(e -> entry(e.getKey(), e.getValue().stream().map(v -> {
                 String implementationClass = v.get("impl");
-                String categoryClass = v.get("category");
                 String name = v.get("name");
-                String factoryMethod = v.get("factoryMethod");
-                return new RegistryEntryInfo(implementationClass, categoryClass, name, factoryMethod);
+                return new NamedComponentInfo(implementationClass, name);
             }).toList())).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
-            return new BundleManifest(components, registries);
+            return new BundleManifest(components, registries, namedComponents);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

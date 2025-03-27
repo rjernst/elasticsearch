@@ -21,6 +21,7 @@ import org.elasticsearch.action.support.ActionFilters;
 import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.support.TransportAction;
 import org.elasticsearch.client.internal.Client;
+import org.elasticsearch.client.internal.node.NodeClient;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.cluster.routing.IndexShardRoutingTable;
@@ -35,13 +36,15 @@ import org.elasticsearch.index.shard.ShardNotFoundException;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.injection.guice.Inject;
 import org.elasticsearch.persistent.AllocatedPersistentTask;
+import org.elasticsearch.persistent.InjectablePersistentTasksExecutor;
 import org.elasticsearch.persistent.PersistentTaskState;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
-import org.elasticsearch.persistent.PersistentTasksExecutor;
+import org.elasticsearch.plugin.NamedComponent;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.sort.SortOrder;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.tasks.TaskId;
+import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.transport.TransportService;
 import org.elasticsearch.xpack.core.downsample.DownsampleShardIndexerStatus;
 import org.elasticsearch.xpack.core.downsample.DownsampleShardPersistentTaskState;
@@ -54,13 +57,21 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 
-public class DownsampleShardPersistentTaskExecutor extends PersistentTasksExecutor<DownsampleShardTaskParams> {
+import static org.elasticsearch.xpack.downsample.Downsample.DOWNSAMPLE_TASK_THREAD_POOL_NAME;
+
+@NamedComponent(DownsampleShardTask.TASK_NAME)
+public class DownsampleShardPersistentTaskExecutor extends InjectablePersistentTasksExecutor<DownsampleShardTaskParams> {
     private static final Logger LOGGER = LogManager.getLogger(DownsampleShardPersistentTaskExecutor.class);
     private final Client client;
 
-    public DownsampleShardPersistentTaskExecutor(final Client client, final String taskName, final Executor executor) {
-        super(taskName, executor);
+    public DownsampleShardPersistentTaskExecutor(final NodeClient client, final ThreadPool threadPool) {
+        super(threadPool.executor(DOWNSAMPLE_TASK_THREAD_POOL_NAME));
         this.client = Objects.requireNonNull(client);
+    }
+
+    @Override
+    public String getTaskName() {
+        return DownsampleShardTask.TASK_NAME;
     }
 
     @Override
@@ -190,7 +201,7 @@ public class DownsampleShardPersistentTaskExecutor extends PersistentTasksExecut
         DownsampleShardTaskParams params,
         BytesRef lastDownsampledTsid
     ) {
-        client.threadPool().executor(Downsample.DOWNSAMPLE_TASK_THREAD_POOL_NAME).execute(new AbstractRunnable() {
+        client.threadPool().executor(DOWNSAMPLE_TASK_THREAD_POOL_NAME).execute(new AbstractRunnable() {
             @Override
             public void onFailure(Exception e) {
                 markAsFailed(task, e);
