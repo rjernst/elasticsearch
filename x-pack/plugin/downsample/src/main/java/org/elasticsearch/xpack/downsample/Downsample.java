@@ -103,32 +103,4 @@ public class Downsample extends Plugin implements ActionPlugin, PersistentTaskPl
             )
         );
     }
-
-    @Override
-    public List<NamedXContentRegistry.Entry> getNamedXContent() {
-        return List.of(
-            new NamedXContentRegistry.Entry(
-                PersistentTaskState.class,
-                new ParseField(DownsampleShardPersistentTaskState.NAME),
-                DownsampleShardPersistentTaskState::fromXContent
-            ),
-            new NamedXContentRegistry.Entry(
-                PersistentTaskParams.class,
-                new ParseField(DownsampleShardTaskParams.NAME),
-                DownsampleShardTaskParams::fromXContent
-            )
-        );
-    }
-
-    /*@Override
-    public List<NamedWriteableRegistry.Entry> getNamedWriteables() {
-        return List.of(
-            new NamedWriteableRegistry.Entry(
-                PersistentTaskState.class,
-                DownsampleShardPersistentTaskState.NAME,
-                DownsampleShardPersistentTaskState::readFromStream
-            ),
-            new NamedWriteableRegistry.Entry(PersistentTaskParams.class, DownsampleShardTaskParams.NAME, DownsampleShardTaskParams::new)
-        );
-    }*/
 }

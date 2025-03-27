@@ -48,6 +48,7 @@ import org.elasticsearch.xcontent.ContextParser;
 import org.elasticsearch.xcontent.ParseField;
 import org.elasticsearch.xcontent.XContent;
 import org.elasticsearch.xcontent.XContentParser;
+import org.elasticsearch.xcontent.XContentValueParser;
 
 import java.io.IOException;
 import java.util.List;
@@ -204,7 +205,7 @@ public interface SearchPlugin {
     /**
      * Specification for a {@link Suggester}.
      */
-    class SuggesterSpec<T extends SuggestionBuilder<T>> extends SearchExtensionSpec<T, CheckedFunction<XContentParser, T, IOException>> {
+    class SuggesterSpec<T extends SuggestionBuilder<T>> extends SearchExtensionSpec<T, XContentValueParser<T>> {
 
         private Writeable.Reader<? extends Suggest.Suggestion<?>> suggestionReader;
 
@@ -223,7 +224,7 @@ public interface SearchPlugin {
         public SuggesterSpec(
             ParseField name,
             Writeable.Reader<T> builderReader,
-            CheckedFunction<XContentParser, T, IOException> builderParser,
+            XContentValueParser<T> builderParser,
             Writeable.Reader<? extends Suggest.Suggestion<?>> suggestionReader
         ) {
 
@@ -245,7 +246,7 @@ public interface SearchPlugin {
         public SuggesterSpec(
             String name,
             Writeable.Reader<T> builderReader,
-            CheckedFunction<XContentParser, T, IOException> builderParser,
+            XContentValueParser<T> builderParser,
             Writeable.Reader<? extends Suggest.Suggestion<?>> suggestionReader
         ) {
 

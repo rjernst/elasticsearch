@@ -227,6 +227,10 @@ import org.elasticsearch.upgrades.SystemIndexMigrationExecutor;
 import org.elasticsearch.usage.UsageService;
 import org.elasticsearch.watcher.ResourceWatcherService;
 import org.elasticsearch.xcontent.NamedXContentRegistry;
+import org.elasticsearch.xcontent.ParseField;
+import org.elasticsearch.xcontent.XContent;
+import org.elasticsearch.xcontent.XContentParser;
+import org.elasticsearch.xcontent.XContentValueParser;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -625,7 +629,33 @@ class NodeConstruction {
                 pluginsService.flatMap(Plugin::getNamedXContent),
                 ClusterModule.getNamedXWriteables().stream(),
                 SystemIndexMigrationExecutor.getNamedXContentParsers().stream(),
-                HealthNodeTaskExecutor.getNamedXContentParsers().stream()
+                HealthNodeTaskExecutor.getNamedXContentParsers().stream(),
+                pluginsService.flatMapBundle(bundleInfo -> {
+                    var entries = bundleInfo.manifest().registries().get(XContent.class.toString());
+                    if (entries == null) {
+                        return List.of();
+                    }
+                    var lambdaGenerator = new FunctionalLambdaGenerator(XContentValueParser.class);
+                    var factoryMethodType = MethodType.methodType(XContent.class, XContentParser.class);
+                    return entries.stream().map(entry -> {
+                        @SuppressWarnings("unchecked")
+                        Class<XContent> categoryClass = (Class<XContent>) bundleInfo.getClass(entry.categoryClass());
+
+                        Class<?> implementationClass = bundleInfo.getClass(entry.implementationClass());
+
+                        CallSite lambda = lambdaGenerator.generate(implementationClass, entry.factoryMethod(), factoryMethodType);
+                        XContentValueParser<? extends XContent> reader;
+                        try {
+                            reader = (XContentValueParser<? extends XContent>) lambda.getTarget().invokeExact();
+                        } catch (Throwable e) {
+                            throw new RuntimeException(e);
+                        }
+
+                        logger.info("TOMATO Entry: " + categoryClass + ", " + entry.name());
+                        return new NamedXContentRegistry.Entry(categoryClass, new ParseField(entry.name()), reader);
+                    }).toList();
+                    }
+                )
             ).flatMap(Function.identity()).toList()
         );
         modules.add(b -> {
