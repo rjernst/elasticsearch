@@ -22,9 +22,9 @@ import java.util.Map;
 
 import static org.elasticsearch.xcontent.XContentParserConfiguration.EMPTY;
 
-public record BundleManifest(List<String> componentClasses) {
+public record BundleManifest(List<String> componentClasses, List<String> extensionsFields) {
     private static final String FILENAME = "bundle-manifest.json";
-    public static final BundleManifest EMPTY = new BundleManifest(List.of());
+    public static final BundleManifest EMPTY = new BundleManifest(List.of(), List.of());
 
     public static BundleManifest load(Path dir) {
         Path manifestPath = dir.resolve(FILENAME);
@@ -44,8 +44,10 @@ public record BundleManifest(List<String> componentClasses) {
             Map<String, Object> manifestMap = parser.map();
             @SuppressWarnings("unchecked")
             List<String> components = (List<String>) manifestMap.get("components");
+            @SuppressWarnings("unchecked")
+            List<String> extensionsFields = (List<String>) manifestMap.get("extensions_fields");
 
-            return new BundleManifest(components);
+            return new BundleManifest(components, extensionsFields);
         } catch (IOException e){
             throw new UncheckedIOException(e);
         }
