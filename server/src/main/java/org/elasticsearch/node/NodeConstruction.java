@@ -165,6 +165,7 @@ import org.elasticsearch.plugins.CircuitBreakerPlugin;
 import org.elasticsearch.plugins.ClusterCoordinationPlugin;
 import org.elasticsearch.plugins.ClusterPlugin;
 import org.elasticsearch.plugins.DiscoveryPlugin;
+import org.elasticsearch.plugins.FunctionalLambdaGenerator;
 import org.elasticsearch.plugins.HealthPlugin;
 import org.elasticsearch.plugins.IngestPlugin;
 import org.elasticsearch.plugins.MapperPlugin;
@@ -230,6 +231,7 @@ import org.elasticsearch.xcontent.NamedXContentRegistry;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.invoke.CallSite;
 import java.lang.invoke.LambdaConversionException;
 import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
@@ -593,30 +595,18 @@ class NodeConstruction {
                     if (entries == null) {
                         return List.of();
                     }
+                    var lambdaGenerator = new FunctionalLambdaGenerator(Writeable.Reader.class);
+                    var factoryMethodType = MethodType.methodType(NamedWriteable.class, StreamInput.class);
                     return entries.stream().map(entry -> {
                         @SuppressWarnings("unchecked")
                         Class<NamedWriteable> categoryClass = (Class<NamedWriteable>) bundleInfo.getClass(entry.categoryClass());
 
                         Class<?> implementationClass = bundleInfo.getClass(entry.implementationClass());
 
-                        MethodType methodType = MethodType.methodType(NamedWriteable.class, StreamInput.class);
-                        MethodHandles.Lookup lookup = MethodHandles.publicLookup();
-                        MethodHandle mh;
-                        try {
-                            if (entry.factoryMethod().equals("<init>")) {
-                                mh = lookup.findConstructor(implementationClass, methodType);
-                            } else {
-                                mh = lookup.findStatic(implementationClass, entry.factoryMethod(), methodType);
-                            }
-                        } catch (NoSuchMethodException | IllegalAccessException e) {
-                            throw new RuntimeException(e);
-                        }
+                        CallSite lambda = lambdaGenerator.generate(implementationClass, entry.factoryMethod(), factoryMethodType);
                         Writeable.Reader<? extends NamedWriteable> reader;
                         try {
-                            reader = (Writeable.Reader<? extends NamedWriteable>)
-                                LambdaMetafactory.metafactory(lookup, "read",
-                                    MethodType.methodType(Writeable.Reader.class), methodType.generic(),
-                                    mh, methodType).getTarget().invokeExact();
+                            reader = (Writeable.Reader<? extends NamedWriteable>) lambda.getTarget().invokeExact();
                         } catch (Throwable e) {
                             throw new RuntimeException(e);
                         }

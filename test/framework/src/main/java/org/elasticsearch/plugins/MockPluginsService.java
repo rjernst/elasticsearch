@@ -69,6 +69,7 @@ public class MockPluginsService extends PluginsService {
                 logger.info("Found manifest in {}", key);
                 try (var stream = bundleUrl.openStream()) {
                     var manifest = BundleManifest.load(stream);
+                    logger.info(manifest);
                     manifests.put(key, manifest);
                 }
             }
