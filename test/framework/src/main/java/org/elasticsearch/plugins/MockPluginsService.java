@@ -15,17 +15,14 @@ import org.elasticsearch.Build;
 import org.elasticsearch.action.admin.cluster.node.info.PluginsAndModules;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.ConcurrentCollections;
-import org.elasticsearch.core.PathUtils;
 import org.elasticsearch.env.Environment;
 import org.elasticsearch.plugins.spi.SPIClassIterator;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -57,7 +54,7 @@ public class MockPluginsService extends PluginsService {
         Map<String, BundleManifest> manifests = new HashMap<>();
         try {
             Enumeration<URL> resources = MockPluginsService.class.getClassLoader().getResources("bundle-manifest.json");
-            for (var itr = resources.asIterator(); itr.hasNext(); ) {
+            for (var itr = resources.asIterator(); itr.hasNext();) {
                 URL bundleUrl = itr.next();
                 URI uri = bundleUrl.toURI();
                 String key;
@@ -72,10 +69,11 @@ public class MockPluginsService extends PluginsService {
                 logger.info("Found manifest in {}", key);
                 try (var stream = bundleUrl.openStream()) {
                     var manifest = BundleManifest.load(stream);
+                    logger.info(manifest);
                     manifests.put(key, manifest);
                 }
             }
-        } catch (IOException|URISyntaxException e) {
+        } catch (IOException | URISyntaxException e) {
             throw new AssertionError(e);
         }
 
@@ -100,7 +98,11 @@ public class MockPluginsService extends PluginsService {
             }
             BundleManifest manifest;
             try {
-                logger.info("Plugin {}: {}", plugin.getClass().getName(), plugin.getClass().getProtectionDomain().getCodeSource().getLocation());
+                logger.info(
+                    "Plugin {}: {}",
+                    plugin.getClass().getName(),
+                    plugin.getClass().getProtectionDomain().getCodeSource().getLocation()
+                );
                 URI locationUri = plugin.getClass().getProtectionDomain().getCodeSource().getLocation().toURI();
                 String key = locationUri.toString();
                 if (key.endsWith(".jar") == false) {

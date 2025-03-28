@@ -11,12 +11,16 @@ import org.elasticsearch.TransportVersion;
 import org.elasticsearch.TransportVersions;
 import org.elasticsearch.action.downsample.DownsampleConfig;
 import org.elasticsearch.common.Strings;
+import org.elasticsearch.common.io.stream.NamedWriteable;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.persistent.PersistentTaskParams;
+import org.elasticsearch.plugin.RegistryCtor;
+import org.elasticsearch.plugin.RegistryEntry;
 import org.elasticsearch.xcontent.ObjectParser;
 import org.elasticsearch.xcontent.ParseField;
+import org.elasticsearch.xcontent.XContent;
 import org.elasticsearch.xcontent.XContentBuilder;
 import org.elasticsearch.xcontent.XContentParser;
 import org.elasticsearch.xpack.core.downsample.DownsampleShardTask;
@@ -26,6 +30,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
+@RegistryEntry(name = DownsampleShardTaskParams.NAME, category = PersistentTaskParams.class, type = XContent.class)
+@RegistryEntry(name = DownsampleShardTaskParams.NAME, category = PersistentTaskParams.class, type = NamedWriteable.class)
 public record DownsampleShardTaskParams(
     DownsampleConfig downsampleConfig,
     String downsampleIndex,
@@ -63,7 +69,8 @@ public record DownsampleShardTaskParams(
         PARSER.declareStringArray(DownsampleShardTaskParams.Builder::dimensions, DIMENSIONS);
     }
 
-    DownsampleShardTaskParams(final StreamInput in) throws IOException {
+    @RegistryCtor
+    public DownsampleShardTaskParams(final StreamInput in) throws IOException {
         this(
             new DownsampleConfig(in),
             in.readString(),
@@ -116,6 +123,7 @@ public record DownsampleShardTaskParams(
         }
     }
 
+    @RegistryCtor
     public static DownsampleShardTaskParams fromXContent(XContentParser parser) throws IOException {
         final DownsampleShardTaskParams.Builder builder = new DownsampleShardTaskParams.Builder();
         PARSER.parse(parser, builder, null);

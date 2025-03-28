@@ -19,19 +19,26 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
+import static java.util.Map.entry;
 import static org.elasticsearch.xcontent.XContentParserConfiguration.EMPTY;
 
-public record BundleManifest(List<String> componentClasses, List<String> extensionsFields) {
+public record BundleManifest(List<String> componentClasses, Map<String, List<RegistryEntryInfo>> registries, Map<String, List<NamedComponentInfo>> namedComponents, List<String> extensionsFields) {
+
     private static final String FILENAME = "bundle-manifest.json";
-    public static final BundleManifest EMPTY = new BundleManifest(List.of(), List.of());
+    public static final BundleManifest EMPTY = new BundleManifest(List.of(), Map.of(), Map.of(), List.of());
+
+    public record RegistryEntryInfo(String implementationClass, String categoryClass, String name, String factoryMethod) {}
+
+    public record NamedComponentInfo(String implementationClass, String name) {}
 
     public static BundleManifest load(Path dir) {
         Path manifestPath = dir.resolve(FILENAME);
         if (Files.exists(manifestPath)) {
             try (var stream = Files.newInputStream(manifestPath)) {
                 return load(stream);
-            } catch (IOException e){
+            } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
         }
@@ -47,8 +54,33 @@ public record BundleManifest(List<String> componentClasses, List<String> extensi
             @SuppressWarnings("unchecked")
             List<String> extensionsFields = (List<String>) manifestMap.get("extensions_fields");
 
-            return new BundleManifest(components, extensionsFields);
-        } catch (IOException e){
+            @SuppressWarnings("unchecked")
+            Map<String, List<Map<String, String>>> untypedRegistries = (Map<String, List<Map<String, String>>>) manifestMap.get(
+                "registries"
+            );
+            var registries = untypedRegistries.entrySet().stream().map(e ->
+                entry(e.getKey(),
+                    e.getValue().stream().map(v -> {
+                        String implementationClass = v.get("impl");
+                        String categoryClass = v.get("category");
+                        String name = v.get("name");
+                        String factoryMethod = v.get("factoryMethod");
+                        return new RegistryEntryInfo(implementationClass, categoryClass, name, factoryMethod);
+                    }).toList())
+            ).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+            @SuppressWarnings("unchecked")
+            Map<String, List<Map<String, String>>> untypedNamedComponents = (Map<String, List<Map<String, String>>>) manifestMap.get(
+                "namedComponents"
+            );
+            var namedComponents = untypedNamedComponents.entrySet().stream().map(e -> entry(e.getKey(), e.getValue().stream().map(v -> {
+                String implementationClass = v.get("impl");
+                String name = v.get("name");
+                return new NamedComponentInfo(implementationClass, name);
+            }).toList())).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+            return new BundleManifest(components, registries, namedComponents, extensionsFields);
+        } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }

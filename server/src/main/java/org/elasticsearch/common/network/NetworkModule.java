@@ -43,6 +43,7 @@ import org.elasticsearch.xcontent.ContextParser;
 import org.elasticsearch.xcontent.NamedXContentRegistry;
 import org.elasticsearch.xcontent.ParseField;
 import org.elasticsearch.xcontent.XContentParser;
+import org.elasticsearch.xcontent.XContentValueParser;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -197,7 +198,7 @@ public final class NetworkModule {
      */
     private static <T extends AllocationCommand> void registerAllocationCommand(
         Writeable.Reader<T> reader,
-        CheckedFunction<XContentParser, T, IOException> parser,
+        XContentValueParser<T> parser,
         ParseField commandName
     ) {
         namedXContents.add(new NamedXContentRegistry.Entry(AllocationCommand.class, commandName, parser));

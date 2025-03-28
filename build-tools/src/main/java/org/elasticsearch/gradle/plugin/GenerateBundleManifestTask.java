@@ -24,9 +24,9 @@ import org.gradle.process.ExecOperations;
 import org.gradle.process.ExecResult;
 import org.gradle.workers.WorkerExecutor;
 
-import javax.inject.Inject;
-
 import java.io.File;
+
+import javax.inject.Inject;
 
 public abstract class GenerateBundleManifestTask extends DefaultTask {
     private static final String NAMED_COMPONENTS_DIR = "generated-bundle-manifest/";

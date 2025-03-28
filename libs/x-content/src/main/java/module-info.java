@@ -12,6 +12,7 @@
  */
 module org.elasticsearch.xcontent {
     requires org.elasticsearch.base;
+    requires org.elasticsearch.plugin;
 
     exports org.elasticsearch.xcontent;
     exports org.elasticsearch.xcontent.cbor;

@@ -17,6 +17,7 @@ embeddedProviders {
 
 dependencies {
   api project(':libs:core')
+  api project(':libs:plugin-api')
 
   testImplementation(project(":test:framework")) {
     exclude group: 'org.elasticsearch', module: 'x-content'

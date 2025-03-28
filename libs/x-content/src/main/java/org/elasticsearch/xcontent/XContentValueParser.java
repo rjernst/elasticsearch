@@ -7,20 +7,13 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.common.io.stream;
+package org.elasticsearch.xcontent;
 
-import org.elasticsearch.plugin.RegistryType;
+import org.elasticsearch.core.CheckedFunction;
 
-/**
- * A {@link Writeable} object identified by its name.
- * To be used for arbitrary serializable objects (e.g. queries); when reading them, their name tells
- * which specific object needs to be created.
- */
-@RegistryType
-public interface NamedWriteable extends Writeable {
+import java.io.IOException;
 
-    /**
-     * Returns the name of the writeable object
-     */
-    String getWriteableName();
+// inherit from CheckedFunction to avoid changing the world
+public interface XContentValueParser<T> extends CheckedFunction<XContentParser, T, IOException> {
+    T apply(XContentParser p) throws IOException;
 }

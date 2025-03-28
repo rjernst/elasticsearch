@@ -66,7 +66,10 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.cluster.version.CompatibilityVersions;
 import org.elasticsearch.common.breaker.CircuitBreaker;
 import org.elasticsearch.common.component.LifecycleComponent;
+import org.elasticsearch.common.io.stream.NamedWriteable;
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry;
+import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.logging.DeprecationCategory;
 import org.elasticsearch.common.logging.DeprecationLogger;
 import org.elasticsearch.common.logging.DynamicContextDataProvider;
@@ -158,10 +161,12 @@ import org.elasticsearch.persistent.PersistentTasksExecutorRegistry;
 import org.elasticsearch.persistent.PersistentTasksService;
 import org.elasticsearch.plugins.ActionPlugin;
 import org.elasticsearch.plugins.AnalysisPlugin;
+import org.elasticsearch.plugins.BundleManifest;
 import org.elasticsearch.plugins.CircuitBreakerPlugin;
 import org.elasticsearch.plugins.ClusterCoordinationPlugin;
 import org.elasticsearch.plugins.ClusterPlugin;
 import org.elasticsearch.plugins.DiscoveryPlugin;
+import org.elasticsearch.plugins.FunctionalLambdaGenerator;
 import org.elasticsearch.plugins.HealthPlugin;
 import org.elasticsearch.plugins.IngestPlugin;
 import org.elasticsearch.plugins.MapperPlugin;
@@ -223,10 +228,21 @@ import org.elasticsearch.upgrades.SystemIndexMigrationExecutor;
 import org.elasticsearch.usage.UsageService;
 import org.elasticsearch.watcher.ResourceWatcherService;
 import org.elasticsearch.xcontent.NamedXContentRegistry;
+import org.elasticsearch.xcontent.ParseField;
+import org.elasticsearch.xcontent.XContent;
+import org.elasticsearch.xcontent.XContentParser;
+import org.elasticsearch.xcontent.XContentValueParser;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.invoke.CallSite;
+import java.lang.invoke.LambdaConversionException;
+import java.lang.invoke.LambdaMetafactory;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -578,7 +594,32 @@ class NodeConstruction {
                 searchModule.getNamedWriteables().stream(),
                 pluginsService.flatMap(Plugin::getNamedWriteables),
                 ClusterModule.getNamedWriteables().stream(),
-                SystemIndexMigrationExecutor.getNamedWriteables().stream()
+                SystemIndexMigrationExecutor.getNamedWriteables().stream(),
+                pluginsService.flatMapBundle(bundleInfo -> {
+                    var entries = bundleInfo.manifest().registries().get(NamedWriteable.class.toString());
+                    if (entries == null) {
+                        return List.of();
+                    }
+                    var lambdaGenerator = new FunctionalLambdaGenerator(Writeable.Reader.class);
+                    var factoryMethodType = MethodType.methodType(NamedWriteable.class, StreamInput.class);
+                    return entries.stream().map(entry -> {
+                        @SuppressWarnings("unchecked")
+                        Class<NamedWriteable> categoryClass = (Class<NamedWriteable>) bundleInfo.getClass(entry.categoryClass());
+
+                        Class<?> implementationClass = bundleInfo.getClass(entry.implementationClass());
+
+                        CallSite lambda = lambdaGenerator.generate(implementationClass, entry.factoryMethod(), factoryMethodType);
+                        Writeable.Reader<? extends NamedWriteable> reader;
+                        try {
+                            reader = (Writeable.Reader<? extends NamedWriteable>) lambda.getTarget().invokeExact();
+                        } catch (Throwable e) {
+                            throw new RuntimeException(e);
+                        }
+
+                        logger.info("POTATO Entry: " + categoryClass + ", " + entry.name());
+                        return new NamedWriteableRegistry.Entry(categoryClass, entry.name(), reader);
+                    }).toList();
+                })
             ).flatMap(Function.identity()).toList()
         );
         xContentRegistry = new NamedXContentRegistry(
@@ -589,7 +630,33 @@ class NodeConstruction {
                 pluginsService.flatMap(Plugin::getNamedXContent),
                 ClusterModule.getNamedXWriteables().stream(),
                 SystemIndexMigrationExecutor.getNamedXContentParsers().stream(),
-                HealthNodeTaskExecutor.getNamedXContentParsers().stream()
+                HealthNodeTaskExecutor.getNamedXContentParsers().stream(),
+                pluginsService.flatMapBundle(bundleInfo -> {
+                    var entries = bundleInfo.manifest().registries().get(XContent.class.toString());
+                    if (entries == null) {
+                        return List.of();
+                    }
+                    var lambdaGenerator = new FunctionalLambdaGenerator(XContentValueParser.class);
+                    var factoryMethodType = MethodType.methodType(XContent.class, XContentParser.class);
+                    return entries.stream().map(entry -> {
+                        @SuppressWarnings("unchecked")
+                        Class<XContent> categoryClass = (Class<XContent>) bundleInfo.getClass(entry.categoryClass());
+
+                        Class<?> implementationClass = bundleInfo.getClass(entry.implementationClass());
+
+                        CallSite lambda = lambdaGenerator.generate(implementationClass, entry.factoryMethod(), factoryMethodType);
+                        XContentValueParser<? extends XContent> reader;
+                        try {
+                            reader = (XContentValueParser<? extends XContent>) lambda.getTarget().invokeExact();
+                        } catch (Throwable e) {
+                            throw new RuntimeException(e);
+                        }
+
+                        logger.info("TOMATO Entry: " + categoryClass + ", " + entry.name());
+                        return new NamedXContentRegistry.Entry(categoryClass, new ParseField(entry.name()), reader);
+                    }).toList();
+                    }
+                )
             ).flatMap(Function.identity()).toList()
         );
         modules.add(b -> {
@@ -1733,8 +1800,25 @@ class NodeConstruction {
             .map(p -> p.getPersistentTasksExecutor(clusterService, threadPool, client, settingsModule, indexNameExpressionResolver))
             .flatMap(List::stream);
 
+        Stream<PersistentTasksExecutor<?>> injectedTaskExecutors = pluginsService.flatMapBundle(bundleInfo -> {
+            var peristentTaskImpls = bundleInfo.manifest().namedComponents().get(PersistentTasksExecutor.class);
+            if (peristentTaskImpls == null) {
+                return List.of();
+            }
+            var classes = peristentTaskImpls.stream().map(BundleManifest.NamedComponentInfo::implementationClass)
+                .map(bundleInfo::getClass).toList();
+            var injector = org.elasticsearch.injection.Injector.create();
+            injector.addInstance(client);
+            injector.addInstance(threadPool);
+            var resultMap = injector.inject(classes);
+            List<PersistentTasksExecutor<?>> results = new ArrayList<>();
+            resultMap.values().stream().forEach(o -> results.add((PersistentTasksExecutor<?>)o));
+            return results;
+        });
+
+
         PersistentTasksExecutorRegistry registry = new PersistentTasksExecutorRegistry(
-            Stream.concat(pluginTaskExecutors, builtinTaskExecutors).toList()
+            Stream.of(pluginTaskExecutors, builtinTaskExecutors, injectedTaskExecutors).flatMap(Function.identity()).toList()
         );
         PersistentTasksClusterService persistentTasksClusterService = new PersistentTasksClusterService(
             settingsModule.getSettings(),

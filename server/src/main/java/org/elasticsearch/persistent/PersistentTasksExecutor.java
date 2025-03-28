@@ -15,6 +15,7 @@ import org.elasticsearch.core.Nullable;
 import org.elasticsearch.core.Tuple;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata.Assignment;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata.PersistentTask;
+import org.elasticsearch.plugin.Extensible;
 import org.elasticsearch.tasks.TaskId;
 
 import java.util.Collection;
@@ -27,6 +28,7 @@ import java.util.function.Predicate;
  * An executor of tasks that can survive restart of requesting or executing node.
  * These tasks are using cluster state rather than only transport service to send requests and responses.
  */
+@Extensible
 public abstract class PersistentTasksExecutor<Params extends PersistentTaskParams> {
 
     private final Executor executor;
@@ -90,7 +92,8 @@ public abstract class PersistentTasksExecutor<Params extends PersistentTaskParam
                     // We don't have any task running yet, pick the first available node
                     return node;
                 }
-                long numberOfTasks = allPersistentTasks.stream().mapToLong(p -> p.getNumberOfTasksOnNode(node.getId(), taskName)).sum();
+                long numberOfTasks =
+                    allPersistentTasks.stream().mapToLong(p -> p.getNumberOfTasksOnNode(node.getId(), getTaskName())).sum();
                 if (minLoad > numberOfTasks) {
                     minLoad = numberOfTasks;
                     minLoadedNode = node;

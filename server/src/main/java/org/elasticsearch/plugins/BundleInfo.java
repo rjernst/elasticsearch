@@ -9,4 +9,12 @@
 
 package org.elasticsearch.plugins;
 
-public record BundleInfo(BundleManifest manifest, Plugin instance) { }
+public record BundleInfo(BundleManifest manifest, Plugin instance) {
+    public Class<?> getClass(String classname) {
+        try {
+            return instance.getClass().getClassLoader().loadClass(classname);
+        } catch (ClassNotFoundException e) {
+            throw new AssertionError(e);
+        }
+    }
+}
