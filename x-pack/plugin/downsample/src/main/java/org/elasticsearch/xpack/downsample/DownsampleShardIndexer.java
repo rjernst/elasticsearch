@@ -56,7 +56,6 @@ import org.elasticsearch.xpack.core.downsample.DownsampleAfterBulkInfo;
 import org.elasticsearch.xpack.core.downsample.DownsampleBeforeBulkInfo;
 import org.elasticsearch.xpack.core.downsample.DownsampleIndexerAction;
 import org.elasticsearch.xpack.core.downsample.DownsampleShardIndexerStatus;
-import org.elasticsearch.xpack.core.downsample.DownsampleShardPersistentTaskState;
 import org.elasticsearch.xpack.core.downsample.DownsampleShardTask;
 
 import java.io.Closeable;

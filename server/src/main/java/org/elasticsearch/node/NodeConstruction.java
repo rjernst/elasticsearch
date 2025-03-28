@@ -637,7 +637,6 @@ class NodeConstruction {
                     if (entries == null) {
                         return List.of();
                     }
-                    var lambdaGenerator = new FunctionalLambdaGenerator(XContentValueParser.class);
                     return entries.stream().map(entry -> {
                         @SuppressWarnings("unchecked")
                         Class<XContent> categoryClass = (Class<XContent>) bundleInfo.getClass(entry.categoryClass());
