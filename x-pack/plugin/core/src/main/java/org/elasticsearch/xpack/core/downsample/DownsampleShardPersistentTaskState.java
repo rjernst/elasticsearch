@@ -55,7 +55,7 @@ public record DownsampleShardPersistentTaskState(DownsampleShardIndexerStatus do
         );
     }
 
-    @RegistryCtor
+    @RegistryCtor(NamedWriteable.class)
     public DownsampleShardPersistentTaskState(final StreamInput in) throws IOException {
         this(DownsampleShardIndexerStatus.readFromStream(in), in.readBytesRef());
     }
@@ -107,7 +107,7 @@ public record DownsampleShardPersistentTaskState(DownsampleShardIndexerStatus do
         return new DownsampleShardPersistentTaskState(DownsampleShardIndexerStatus.readFromStream(in), in.readBytesRef());
     }
 
-    @RegistryCtor
+    @RegistryCtor(XContent.class)
     public static DownsampleShardPersistentTaskState fromXContent(final XContentParser parser) throws IOException {
         final DownsampleShardPersistentTaskState.Builder builder = new DownsampleShardPersistentTaskState.Builder();
         PARSER.parse(parser, builder, null);
