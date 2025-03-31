@@ -12,6 +12,7 @@ package org.elasticsearch.injection;
 import org.elasticsearch.injection.api.Inject;
 import org.elasticsearch.injection.spec.AmbiguousSpec;
 import org.elasticsearch.injection.spec.ExistingInstanceSpec;
+import org.elasticsearch.injection.spec.ExistingMultipleInstancesSpec;
 import org.elasticsearch.injection.spec.InjectionSpec;
 import org.elasticsearch.injection.spec.MethodHandleSpec;
 import org.elasticsearch.injection.spec.ParameterModifier;
@@ -26,6 +27,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -120,6 +122,22 @@ public final class Injector {
         return this;
     }
 
+    public <T> Injector addExtensionInstances(Class<T> type, Collection<?> objects) {
+        UnambiguousSpec spec = seedSpecs.computeIfAbsent(type, i -> new ExistingMultipleInstancesSpec(type, new ArrayList<>()));
+        if (spec instanceof ExistingMultipleInstancesSpec == false) {
+            throw new IllegalStateException("There's already an object for " + type);
+        }
+        ((ExistingMultipleInstancesSpec) spec).instances().addAll(objects);
+        return this;
+    }
+
+    public Injector addExtensionsInstances(Map<Class<?>, Collection<?>> objects) {
+        for (Map.Entry<Class<?>, Collection<?>> entry : objects.entrySet()) {
+            addExtensionInstances(entry.getKey(), entry.getValue());
+        }
+        return this;
+    }
+
     /**
      * Indicates that <code>object</code> is to be injected for parameters of type <code>type</code>.
      * The given object is treated as though it had been instantiated by the injector.
@@ -156,6 +174,8 @@ public final class Injector {
         specMap.values().forEach((spec) -> {
             if (spec instanceof ExistingInstanceSpec e) {
                 existingInstances.put(e.requestedType(), e.instance());
+            } else if (spec instanceof ExistingMultipleInstancesSpec s) {
+                existingInstances.put(s.requestedType(), s.instances());
             }
         });
         PlanInterpreter interpreter = new PlanInterpreter(existingInstances, new ProxyPool());
@@ -200,7 +220,7 @@ public final class Injector {
             }
 
             InjectionSpec spec = seedMap.get(c);
-            if (spec instanceof ExistingInstanceSpec) {
+            if (spec instanceof ExistingInstanceSpec || spec instanceof ExistingMultipleInstancesSpec) {
                 // simple!
                 result.put(c, spec);
                 continue;

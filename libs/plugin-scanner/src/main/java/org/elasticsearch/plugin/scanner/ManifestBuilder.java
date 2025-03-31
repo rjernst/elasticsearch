@@ -61,7 +61,8 @@ public class ManifestBuilder {
         ManifestBuilder.writeToFile(componentsClasses, extensionsFields, registries, namedComponents, outputFile);
     }
 
-    public static void writeToFile(List<String> componentsClasses, List<String> extensionsFields, Map<String, List<EntryInfo>> registries, Map<String, List<NamedComponentInfo>> namedComponents, Path outputFile) throws IOException {
+    public static void writeToFile(List<String> componentsClasses, List<String> extensionsFields, Map<String, List<EntryInfo>> registries,
+                                   Map<String, List<NamedComponentInfo>> namedComponents, Path outputFile) throws IOException {
         Files.createDirectories(outputFile.getParent());
 
         try (OutputStream outputStream = Files.newOutputStream(outputFile)) {
@@ -71,7 +72,7 @@ public class ManifestBuilder {
                 builder.startObject();
 
                 builder.array("components", componentsClasses.toArray(new String[0]));
-                namedComponents.array("extensions_fields", extensionsFields.toArray(new String[0]));
+                builder.array("extensions_fields", extensionsFields.toArray(new String[0]));
 
                 builder.startObject("registries");
                 for (var entry : registries.entrySet()) {

@@ -12,4 +12,5 @@ package org.elasticsearch.injection.spec;
 /**
  * Indicates that there is just one way to inject {@link #requestedType}.
  */
-public sealed interface UnambiguousSpec extends InjectionSpec permits ExistingInstanceSpec, MethodHandleSpec, SubtypeSpec {}
+public sealed interface UnambiguousSpec extends InjectionSpec
+    permits ExistingInstanceSpec, ExistingMultipleInstancesSpec, MethodHandleSpec, SubtypeSpec {}
