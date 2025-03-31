@@ -24,10 +24,10 @@ import java.util.stream.Collectors;
 import static java.util.Map.entry;
 import static org.elasticsearch.xcontent.XContentParserConfiguration.EMPTY;
 
-public record BundleManifest(List<String> componentClasses, Map<String, List<RegistryEntryInfo>> registries, Map<String, List<NamedComponentInfo>> namedComponents) {
+public record BundleManifest(List<String> componentClasses, Map<String, List<RegistryEntryInfo>> registries, Map<String, List<NamedComponentInfo>> namedComponents, List<String> extensionsFields) {
 
     private static final String FILENAME = "bundle-manifest.json";
-    public static final BundleManifest EMPTY = new BundleManifest(List.of(), Map.of(), Map.of());
+    public static final BundleManifest EMPTY = new BundleManifest(List.of(), Map.of(), Map.of(), List.of());
 
     public record RegistryEntryInfo(String implementationClass, String categoryClass, String name, String factoryMethod) {}
 
@@ -51,6 +51,8 @@ public record BundleManifest(List<String> componentClasses, Map<String, List<Reg
             Map<String, Object> manifestMap = parser.map();
             @SuppressWarnings("unchecked")
             List<String> components = (List<String>) manifestMap.get("components");
+            @SuppressWarnings("unchecked")
+            List<String> extensionsFields = (List<String>) manifestMap.get("extensions_fields");
 
             @SuppressWarnings("unchecked")
             Map<String, List<Map<String, String>>> untypedRegistries = (Map<String, List<Map<String, String>>>) manifestMap.get(
@@ -83,7 +85,7 @@ public record BundleManifest(List<String> componentClasses, Map<String, List<Reg
                 System.out.println("Named components: " + namedComponents);
             }
 
-            return new BundleManifest(components, registries, namedComponents);
+            return new BundleManifest(components, registries, namedComponents, extensionsFields);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

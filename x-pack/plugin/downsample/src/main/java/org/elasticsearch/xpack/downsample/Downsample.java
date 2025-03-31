@@ -19,13 +19,13 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.SettingsFilter;
 import org.elasticsearch.common.util.concurrent.EsExecutors;
 import org.elasticsearch.features.NodeFeature;
+import org.elasticsearch.plugin.Extension;
 import org.elasticsearch.plugins.ActionPlugin;
 import org.elasticsearch.plugins.PersistentTaskPlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.rest.RestController;
 import org.elasticsearch.rest.RestHandler;
-import org.elasticsearch.threadpool.ExecutorBuilder;
-import org.elasticsearch.threadpool.FixedExecutorBuilder;
+import org.elasticsearch.threadpool.FixedExecutorBuilderSpec;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import java.util.List;
@@ -38,18 +38,13 @@ public class Downsample extends Plugin implements ActionPlugin, PersistentTaskPl
     private static final int DOWNSAMPLE_TASK_THREAD_POOL_QUEUE_SIZE = 256;
     public static final String DOWNSAMPLE_MIN_NUMBER_OF_REPLICAS_NAME = "downsample.min_number_of_replicas";
 
-    @Override
-    public List<ExecutorBuilder<?>> getExecutorBuilders(Settings settings) {
-        final FixedExecutorBuilder downsample = new FixedExecutorBuilder(
-            settings,
-            DOWNSAMPLE_TASK_THREAD_POOL_NAME,
-            ThreadPool.oneEighthAllocatedProcessors(EsExecutors.allocatedProcessors(settings)),
-            DOWNSAMPLE_TASK_THREAD_POOL_QUEUE_SIZE,
-            "xpack.downsample.thread_pool",
-            EsExecutors.TaskTrackingConfig.DO_NOT_TRACK
-        );
-        return List.of(downsample);
-    }
+    @Extension
+    public static final FixedExecutorBuilderSpec DOWNSAMPLE_EXECUTOR = new FixedExecutorBuilderSpec(
+        DOWNSAMPLE_TASK_THREAD_POOL_NAME,
+        settings -> ThreadPool.oneEighthAllocatedProcessors(EsExecutors.allocatedProcessors(settings)),
+        DOWNSAMPLE_TASK_THREAD_POOL_QUEUE_SIZE,
+        "xpack.downsample.thread_pool"
+    );
 
     @Override
     public List<ActionHandler<? extends ActionRequest, ? extends ActionResponse>> getActions() {
