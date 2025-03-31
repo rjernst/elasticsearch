@@ -274,11 +274,21 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler, 
      * @param builtInExecutorBuilders used to construct builders for the built-in thread pools
      * @param customBuilders a list of additional thread pool builders that were defined elsewhere (like a Plugin).
      */
+    public ThreadPool(
+        final Settings settings,
+        MeterRegistry meterRegistry,
+        BuiltInExecutorBuilders builtInExecutorBuilders,
+        final ExecutorBuilder<?>... customBuilders
+    ) {
+        this(settings, meterRegistry, builtInExecutorBuilders, Collections.emptyList(), customBuilders);
+    }
+
     @SuppressWarnings({ "rawtypes", "unchecked" })
     public ThreadPool(
         final Settings settings,
         MeterRegistry meterRegistry,
         BuiltInExecutorBuilders builtInExecutorBuilders,
+        Collection<FixedExecutorBuilderSpec> executorBuilderSpecs,
         final ExecutorBuilder<?>... customBuilders
     ) {
         assert Node.NODE_NAME_SETTING.exists(settings);
@@ -294,6 +304,13 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler, 
             }
             builders.put(builder.name(), builder);
         }
+        for (FixedExecutorBuilderSpec spec : executorBuilderSpecs) {
+            int size = spec.sizeFunction().applyAsInt(settings);
+            FixedExecutorBuilder builder = new FixedExecutorBuilder(settings, spec.name(), size, spec.queueSize(), spec.prefix(),
+                EsExecutors.TaskTrackingConfig.DO_NOT_TRACK);
+            builders.put(builder.name(), builder);
+        }
+
         this.builders = Collections.unmodifiableMap(builders);
 
         threadContext = new ThreadContext(settings);
@@ -487,6 +504,10 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler, 
             throw new IllegalArgumentException(message);
         }
         return holder.executor();
+    }
+
+    public ExecutorService executor(FixedExecutorBuilderSpec spec) {
+        return executor(spec.name());
     }
 
     /**
