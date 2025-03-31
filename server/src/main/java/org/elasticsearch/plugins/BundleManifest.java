@@ -73,11 +73,17 @@ public record BundleManifest(List<String> componentClasses, Map<String, List<Reg
             Map<String, List<Map<String, String>>> untypedNamedComponents = (Map<String, List<Map<String, String>>>) manifestMap.get(
                 "namedComponents"
             );
+            if (untypedNamedComponents.isEmpty() == false) {
+                System.out.println("Untyped named components: " + untypedNamedComponents);
+            }
             var namedComponents = untypedNamedComponents.entrySet().stream().map(e -> entry(e.getKey(), e.getValue().stream().map(v -> {
                 String implementationClass = v.get("impl");
                 String name = v.get("name");
                 return new NamedComponentInfo(implementationClass, name);
             }).toList())).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            if (namedComponents.isEmpty() == false) {
+                System.out.println("Named components: " + namedComponents);
+            }
 
             return new BundleManifest(components, registries, namedComponents, extensionsFields);
         } catch (IOException e) {

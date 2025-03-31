@@ -596,25 +596,26 @@ class NodeConstruction {
                 ClusterModule.getNamedWriteables().stream(),
                 SystemIndexMigrationExecutor.getNamedWriteables().stream(),
                 pluginsService.flatMapBundle(bundleInfo -> {
-                    var entries = bundleInfo.manifest().registries().get(NamedWriteable.class.toString());
+                    var entries = bundleInfo.manifest().registries().get(NamedWriteable.class.getName());
                     if (entries == null) {
                         return List.of();
                     }
                     var lambdaGenerator = new FunctionalLambdaGenerator(Writeable.Reader.class);
-                    var factoryMethodType = MethodType.methodType(NamedWriteable.class, StreamInput.class);
                     return entries.stream().map(entry -> {
                         @SuppressWarnings("unchecked")
                         Class<NamedWriteable> categoryClass = (Class<NamedWriteable>) bundleInfo.getClass(entry.categoryClass());
 
                         Class<?> implementationClass = bundleInfo.getClass(entry.implementationClass());
 
-                        CallSite lambda = lambdaGenerator.generate(implementationClass, entry.factoryMethod(), factoryMethodType);
-                        Writeable.Reader<? extends NamedWriteable> reader;
-                        try {
-                            reader = (Writeable.Reader<? extends NamedWriteable>) lambda.getTarget().invokeExact();
-                        } catch (Throwable e) {
-                            throw new RuntimeException(e);
-                        }
+                        var factoryMethodType = MethodType.methodType(implementationClass, StreamInput.class);
+                        MethodHandle factoryMethod = FunctionalLambdaGenerator.findMethod(implementationClass, entry.factoryMethod(), factoryMethodType);
+                        Writeable.Reader<? extends NamedWriteable> reader = stream -> {
+                            try {
+                                return (NamedWriteable) factoryMethod.invoke(stream);
+                            } catch (Throwable e) {
+                                throw new RuntimeException(e);
+                            }
+                        };
 
                         logger.info("POTATO Entry: " + categoryClass + ", " + entry.name());
                         return new NamedWriteableRegistry.Entry(categoryClass, entry.name(), reader);
@@ -632,25 +633,25 @@ class NodeConstruction {
                 SystemIndexMigrationExecutor.getNamedXContentParsers().stream(),
                 HealthNodeTaskExecutor.getNamedXContentParsers().stream(),
                 pluginsService.flatMapBundle(bundleInfo -> {
-                    var entries = bundleInfo.manifest().registries().get(XContent.class.toString());
+                    var entries = bundleInfo.manifest().registries().get(XContent.class.getName());
                     if (entries == null) {
                         return List.of();
                     }
-                    var lambdaGenerator = new FunctionalLambdaGenerator(XContentValueParser.class);
-                    var factoryMethodType = MethodType.methodType(XContent.class, XContentParser.class);
                     return entries.stream().map(entry -> {
                         @SuppressWarnings("unchecked")
                         Class<XContent> categoryClass = (Class<XContent>) bundleInfo.getClass(entry.categoryClass());
 
                         Class<?> implementationClass = bundleInfo.getClass(entry.implementationClass());
+                        var factoryMethodType = MethodType.methodType(implementationClass, XContentParser.class);
 
-                        CallSite lambda = lambdaGenerator.generate(implementationClass, entry.factoryMethod(), factoryMethodType);
-                        XContentValueParser<? extends XContent> reader;
-                        try {
-                            reader = (XContentValueParser<? extends XContent>) lambda.getTarget().invokeExact();
-                        } catch (Throwable e) {
-                            throw new RuntimeException(e);
-                        }
+                        MethodHandle factoryMethod = FunctionalLambdaGenerator.findMethod(implementationClass, entry.factoryMethod(), factoryMethodType);
+                        XContentValueParser<? extends XContent> reader = parser -> {
+                            try {
+                                return (XContent) factoryMethod.invoke(parser);
+                            } catch (Throwable e) {
+                                throw new RuntimeException(e);
+                            }
+                        };
 
                         logger.info("TOMATO Entry: " + categoryClass + ", " + entry.name());
                         return new NamedXContentRegistry.Entry(categoryClass, new ParseField(entry.name()), reader);
@@ -1801,11 +1802,12 @@ class NodeConstruction {
             .flatMap(List::stream);
 
         Stream<PersistentTasksExecutor<?>> injectedTaskExecutors = pluginsService.flatMapBundle(bundleInfo -> {
-            var peristentTaskImpls = bundleInfo.manifest().namedComponents().get(PersistentTasksExecutor.class);
-            if (peristentTaskImpls == null) {
+            var persistentTaskImpls = bundleInfo.manifest().namedComponents().get(PersistentTasksExecutor.class.getName());
+            if (persistentTaskImpls == null) {
                 return List.of();
             }
-            var classes = peristentTaskImpls.stream().map(BundleManifest.NamedComponentInfo::implementationClass)
+            logger.info("PIZZA Found PersistentTaskExecutors for plugin " + bundleInfo.instance().getClass().getName());
+            var classes = persistentTaskImpls.stream().map(BundleManifest.NamedComponentInfo::implementationClass)
                 .map(bundleInfo::getClass).toList();
             var injector = org.elasticsearch.injection.Injector.create();
             injector.addInstance(client);

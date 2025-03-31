@@ -69,7 +69,7 @@ public record DownsampleShardTaskParams(
         PARSER.declareStringArray(DownsampleShardTaskParams.Builder::dimensions, DIMENSIONS);
     }
 
-    @RegistryCtor
+    @RegistryCtor(NamedWriteable.class)
     public DownsampleShardTaskParams(final StreamInput in) throws IOException {
         this(
             new DownsampleConfig(in),
@@ -123,7 +123,7 @@ public record DownsampleShardTaskParams(
         }
     }
 
-    @RegistryCtor
+    @RegistryCtor(XContent.class)
     public static DownsampleShardTaskParams fromXContent(XContentParser parser) throws IOException {
         final DownsampleShardTaskParams.Builder builder = new DownsampleShardTaskParams.Builder();
         PARSER.parse(parser, builder, null);

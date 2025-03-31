@@ -18,11 +18,13 @@ import java.lang.reflect.Method;
 
 public class FunctionalLambdaGenerator {
     private final MethodHandles.Lookup lookup;
+    private final Class<?> functionalInterface;
     private final String interfaceMethodName;
-    private final MethodType interfaceMethodType;
+    private final Class<?>[] interfaceMethodParameters;
 
     public FunctionalLambdaGenerator(Class<?> functionalInterface) {
         this.lookup = MethodHandles.publicLookup();
+        this.functionalInterface = functionalInterface;
 
         if (functionalInterface.isInterface() == false) {
             throw new IllegalArgumentException(functionalInterface.getName() + " is not an interface");
@@ -40,24 +42,39 @@ public class FunctionalLambdaGenerator {
         }
 
         interfaceMethodName = interfaceMethod.getName();
-        interfaceMethodType = MethodType.methodType(interfaceMethod.getReturnType(), interfaceMethod.getParameterTypes());
+        interfaceMethodParameters = interfaceMethod.getParameterTypes();
     }
 
     public CallSite generate(Class<?> clazz, String methodName, MethodType methodType) {
         MethodHandle mh;
         try {
             if (methodName.equals("<init>")) {
-                mh = lookup.findConstructor(clazz, methodType);
+                mh = lookup.findConstructor(clazz, MethodType.methodType(void.class, methodType.parameterArray()));
             } else {
                 mh = lookup.findStatic(clazz, methodName, methodType);
             }
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new AssertionError(e);
         }
+        var lambdaFactoryMethodType = MethodType.methodType(functionalInterface);
+        var interfaceMethodType = MethodType.methodType(clazz, interfaceMethodParameters);
 
         try {
-            return LambdaMetafactory.metafactory(lookup, interfaceMethodName, interfaceMethodType, methodType.generic(), mh, methodType);
+            return LambdaMetafactory.metafactory(MethodHandles.lookup(), interfaceMethodName, lambdaFactoryMethodType, interfaceMethodType, mh, interfaceMethodType);
         } catch (Throwable e) {
+            throw new AssertionError("interface method: " + interfaceMethodType +"\nlambda mt: " + MethodType.methodType(functionalInterface) + "\ninterface mt: " + interfaceMethodType, e);
+        }
+    }
+
+    public static MethodHandle findMethod(Class<?> clazz, String methodName, MethodType methodType) {
+        MethodHandles.Lookup lookup = MethodHandles.publicLookup();
+        try {
+            if (methodName.equals("<init>")) {
+                return lookup.findConstructor(clazz, MethodType.methodType(void.class, methodType.parameterArray()));
+            } else {
+                return lookup.findStatic(clazz, methodName, methodType);
+            }
+        } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new AssertionError(e);
         }
     }

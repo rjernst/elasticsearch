@@ -190,12 +190,24 @@ public class ManifestBuilder {
             @Override
             public void visitEnd() {
                 var methodVisitor = new ClassVisitor(Opcodes.ASM9) {
-                    public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
+                    public MethodVisitor visitMethod(int access, String methodname, String desc, String signature, String[] exceptions) {
                         return new MethodVisitor(Opcodes.ASM9) {
                             @Override
                             public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
                                 if (descriptor.equals(registryCtorDescriptor)) {
-                                    factoryMethodName = name;
+                                    return new AnnotationVisitor(Opcodes.ASM9) {
+                                        @Override
+                                        public void visit(String name, Object value) {
+                                            if (name.equals("value")) {
+                                                assert value instanceof Type;
+                                                if (registryType.equals(value)) {
+                                                    factoryMethodName = methodname;
+                                                }
+                                            } else {
+                                                throw new AssertionError("unexpected annotation: " + name);
+                                            }
+                                        }
+                                    };
                                 }
                                 return null;
                             }
