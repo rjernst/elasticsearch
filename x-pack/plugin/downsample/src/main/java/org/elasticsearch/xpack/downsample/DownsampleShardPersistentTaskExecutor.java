@@ -308,6 +308,7 @@ public class DownsampleShardPersistentTaskExecutor extends InjectablePersistentT
             }
         }
 
+        @NamedComponent("indices:data/read/downsample_delegate")
         public static class TA extends TransportAction<Request, ActionResponse.Empty> {
 
             private final Client client;

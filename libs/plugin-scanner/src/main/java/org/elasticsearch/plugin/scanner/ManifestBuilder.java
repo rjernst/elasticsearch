@@ -243,7 +243,8 @@ public class ManifestBuilder {
     }
 
     private static String pathToClassName(String classWithSlashes) {
-        return classWithSlashes.replace('/', '.');
+        return classWithSlashes.replace('/', '.')
+            .replace('$', '.');
     }
 
 }

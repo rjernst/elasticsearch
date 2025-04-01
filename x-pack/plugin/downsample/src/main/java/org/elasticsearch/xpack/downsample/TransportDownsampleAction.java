@@ -70,6 +70,7 @@ import org.elasticsearch.injection.guice.Inject;
 import org.elasticsearch.persistent.PersistentTaskParams;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
 import org.elasticsearch.persistent.PersistentTasksService;
+import org.elasticsearch.plugin.NamedComponent;
 import org.elasticsearch.search.aggregations.bucket.histogram.DateHistogramInterval;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.tasks.TaskId;
@@ -107,6 +108,7 @@ import static org.elasticsearch.xpack.core.ilm.DownsampleAction.DOWNSAMPLED_INDE
  *  -  instantiating {@link org.elasticsearch.persistent.PersistentTasksExecutor} to start a persistent downsample task
  *  -  cleaning up state
  */
+@NamedComponent("indices:admin/xpack/downsample")
 public class TransportDownsampleAction extends AcknowledgedTransportMasterNodeAction<DownsampleAction.Request> {
 
     private static final Logger logger = LogManager.getLogger(TransportDownsampleAction.class);
