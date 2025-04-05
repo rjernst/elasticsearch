@@ -16,8 +16,6 @@ import org.apache.lucene.util.SetOnce;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.TransportVersion;
 import org.elasticsearch.action.ActionModule;
-import org.elasticsearch.action.ActionRequest;
-import org.elasticsearch.action.ActionResponse;
 import org.elasticsearch.action.ActionType;
 import org.elasticsearch.action.admin.cluster.repositories.reservedstate.ReservedRepositoryAction;
 import org.elasticsearch.action.admin.indices.template.reservedstate.ReservedComposableIndexTemplateAction;
@@ -236,19 +234,13 @@ import org.elasticsearch.xcontent.XContentValueParser;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.invoke.CallSite;
-import java.lang.invoke.LambdaConversionException;
-import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -262,8 +254,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.lang.invoke.MethodHandles.lookup;
-import static java.util.Collections.newSetFromMap;
-import static java.util.function.Predicate.not;
 import static org.elasticsearch.core.Types.forciblyCast;
 
 /**
@@ -358,6 +348,7 @@ class NodeConstruction {
     private TerminationHandler terminationHandler;
     private NamedWriteableRegistry namedWriteableRegistry;
     private NamedXContentRegistry xContentRegistry;
+    private PersistentTasksService persistentTasksService;
 
     private NodeConstruction(List<Closeable> resourcesToClose) {
         this.resourcesToClose = resourcesToClose;
@@ -1377,7 +1368,7 @@ class NodeConstruction {
         // 1. inject
         // 2. extract lifecycle/closeable
         // 3. add objects to legacy injector
-        Map<ActionType<?>, TransportAction<?, ?>> newTransportActions = new HashMap<>();
+        List<TransportAction<?, ?>> newTransportActions = new ArrayList<>();
         pluginsService.forEachBundle(bundle -> {
             Plugin plugin = bundle.instance();
             ClassLoader loader = plugin.getClass().getClassLoader();
@@ -1390,6 +1381,16 @@ class NodeConstruction {
                     throw new AssertionError(e);
                 }
             }
+            for (var componentInfos : bundle.manifest().namedComponents().values()) {
+                for (var componentInfo : componentInfos) {
+                    try {
+                        classes.add(loader.loadClass(componentInfo.implementationClass()));
+                    } catch (ClassNotFoundException e) {
+                        // should not be possible, all classes were discovered within the bundle
+                        throw new AssertionError(e);
+                    }
+                }
+            }
             if (classes.isEmpty()) {
                 return; // no new style injection
             }
@@ -1398,14 +1399,24 @@ class NodeConstruction {
 
             logger.info("Using injector to instantiate classes for {}: {}", plugin.getClass().getSimpleName(), classes);
             var injector = org.elasticsearch.injection.Injector.create();
+            injector.addInstance(transportService);
+            injector.addInstance(settings);
+            injector.addInstance(client);
+            //injector.addInstance(clusterService);
+            injector.addInstance(metadataCreateIndexService);
+            injector.addInstance(actionModule.getActionFilters());
+            injector.addInstance(projectResolver);
+            injector.addInstance(settingsModule.getIndexScopedSettings());
+            injector.addInstance(persistentTasksService);
             injector.addInstances(createComponentsObjects);
+            //injector.addInstance(indicesService);
             addRecordContents(injector, pluginServices);
             var resultMap = injector.inject(classes);
 
             Collection<Object> injectedObjects = resultMap.values();
             for (Object object : injectedObjects) {
                 if (object instanceof TransportAction<?,?> ta) {
-                    newTransportActions.put(new ActionType<>(ta.actionName), ta);
+                    newTransportActions.add(ta);
                 }
             }
 
@@ -1580,7 +1591,7 @@ class NodeConstruction {
         ClusterService clusterService,
         TransportService transportService,
         FeatureService featureService,
-        Map<ActionType<?>, TransportAction<?, ?>> newTransportActions
+        List<TransportAction<?, ?>> newTransportActions
     ) {
         // We allocate copies of existing shards by looking for a viable copy of the shard in the cluster and assigning the shard there.
         // The search for viable copies is triggered by an allocation attempt (i.e. a reroute) and is performed asynchronously. When it
@@ -1592,10 +1603,9 @@ class NodeConstruction {
         // Due to Java's type erasure with generics, the injector can't give us exactly what we need, and we have
         // to resort to some evil casting.
         @SuppressWarnings("rawtypes")
-        Map<ActionType<? extends ActionResponse>, TransportAction<? extends ActionRequest, ? extends ActionResponse>> actions =
+        Map<ActionType<?>, TransportAction<?, ?>> actions =
             new HashMap<>(forciblyCast(injector.getInstance(new Key<Map<ActionType, TransportAction>>() {
             })));
-        actions.putAll(newTransportActions);
 
         client.initialize(
             actions,
@@ -1604,6 +1614,8 @@ class NodeConstruction {
             transportService.getLocalNodeConnection(),
             transportService.getRemoteClusterService()
         );
+        logger.info("NEW ACTIONS: " + newTransportActions);
+        client.initialize2(newTransportActions);
 
         logger.debug("initializing HTTP handlers ...");
         actionModule.initRestHandlers(() -> clusterService.state().nodesIfRecovered(), f -> {
@@ -1822,7 +1834,7 @@ class NodeConstruction {
         MetadataUpdateSettingsService metadataUpdateSettingsService,
         MetadataCreateIndexService metadataCreateIndexService
     ) {
-        PersistentTasksService persistentTasksService = new PersistentTasksService(clusterService, threadPool, client);
+        this.persistentTasksService = new PersistentTasksService(clusterService, threadPool, client);
         SystemIndexMigrationExecutor systemIndexMigrationExecutor = new SystemIndexMigrationExecutor(
             client,
             clusterService,

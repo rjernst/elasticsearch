@@ -39,6 +39,14 @@ public abstract class TransportAction<Request extends ActionRequest, Response ex
     @Deprecated
     protected Logger logger = LogManager.getLogger(getClass());
 
+    public Class<Request> getRequestClass() {
+        return null;
+    }
+
+    public String getActionName() {
+        return actionName;
+    }
+
     interface TransportActionHandler<Request extends ActionRequest, Response extends ActionResponse> {
         void execute(Task task, Request request, ActionListener<Response> listener);
     }

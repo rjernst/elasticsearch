@@ -27,6 +27,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse;
 import org.elasticsearch.action.support.master.AcknowledgedTransportMasterNodeAction;
 import org.elasticsearch.client.internal.Client;
 import org.elasticsearch.client.internal.OriginSettingClient;
+import org.elasticsearch.client.internal.node.NodeClient;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.ClusterStateTaskListener;
 import org.elasticsearch.cluster.SimpleBatchedExecutor;
@@ -151,7 +152,7 @@ public class TransportDownsampleAction extends AcknowledgedTransportMasterNodeAc
 
     @Inject
     public TransportDownsampleAction(
-        Client client,
+        NodeClient client,
         IndicesService indicesService,
         ClusterService clusterService,
         TransportService transportService,
@@ -181,6 +182,11 @@ public class TransportDownsampleAction extends AcknowledgedTransportMasterNodeAc
         this.taskQueue = clusterService.createTaskQueue("downsample", Priority.URGENT, STATE_UPDATE_TASK_EXECUTOR);
         this.persistentTasksService = persistentTasksService;
         this.downsampleMetrics = downsampleMetrics;
+    }
+
+    @Override
+    public Class<DownsampleAction.Request> getRequestClass() {
+        return DownsampleAction.Request.class;
     }
 
     private void recordSuccessMetrics(long startTime) {
