@@ -7,6 +7,31 @@
 
 apply plugin: 'elasticsearch.build'
 
+def patched = Attribute.of('patched', Boolean)
+
+configurations {
+  compileClasspath {
+    attributes {
+      attribute(patched, true)
+    }
+  }
+  runtimeClasspath {
+    attributes {
+      attribute(patched, true)
+    }
+  }
+  testCompileClasspath {
+    attributes {
+      attribute(patched, true)
+    }
+  }
+  testRuntimeClasspath {
+    attributes {
+      attribute(patched, true)
+    }
+  }
+}
+
 dependencies {
   compileOnly project(':server')
   compileOnly project(':x-pack:plugin:esql:compute')
@@ -27,6 +52,17 @@ dependencies {
   testImplementation project(':test:framework')
   testImplementation('org.apache.arrow:arrow-memory-unsafe:16.1.0')
   testImplementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${versions.jackson}")
+
+  attributesSchema {
+    attribute(patched)
+  }
+  artifactTypes.getByName("jar") {
+    attributes.attribute(patched, false)
+  }
+  registerTransform(org.elasticsearch.gradle.internal.dependencies.patches.arrow.ArrowAllocationManagerPatcher) {
+    from.attribute(patched, false)
+    to.attribute(patched, true)
+  }
 }
 
 tasks.named("dependencyLicenses").configure {
