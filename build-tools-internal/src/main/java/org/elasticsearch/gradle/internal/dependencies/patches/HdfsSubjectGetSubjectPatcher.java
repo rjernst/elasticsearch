@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.dependencies.patches.hdfs;
+package org.elasticsearch.gradle.internal.dependencies.patches;
 
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -18,8 +18,8 @@ import static org.objectweb.asm.Opcodes.ASM9;
 import static org.objectweb.asm.Opcodes.INVOKESTATIC;
 import static org.objectweb.asm.Opcodes.POP;
 
-class SubjectGetSubjectPatcher extends ClassVisitor {
-    SubjectGetSubjectPatcher(ClassWriter classWriter) {
+class HdfsSubjectGetSubjectPatcher extends ClassVisitor {
+    HdfsSubjectGetSubjectPatcher(ClassWriter classWriter) {
         super(ASM9, classWriter);
     }
 

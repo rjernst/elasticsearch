@@ -7,12 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.dependencies.patches.hdfs;
+package org.elasticsearch.gradle.internal.dependencies.patches;
 
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-public class MethodReplacement extends MethodVisitor {
+class MethodReplacement extends MethodVisitor {
     private final MethodVisitor delegate;
     private final Runnable bodyWriter;
 

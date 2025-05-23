@@ -9,7 +9,22 @@
 
 package org.elasticsearch.gradle.internal.dependencies.patches;
 
+import org.gradle.api.artifacts.transform.CacheableTransform;
+import org.gradle.api.artifacts.transform.InputArtifact;
+import org.gradle.api.artifacts.transform.TransformAction;
+import org.gradle.api.artifacts.transform.TransformOutputs;
+import org.gradle.api.artifacts.transform.TransformParameters;
+import org.gradle.api.file.FileSystemLocation;
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
+import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.tasks.Classpath;
+import org.gradle.api.tasks.Input;
+import org.jetbrains.annotations.NotNull;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 
 import java.io.File;
@@ -19,6 +34,7 @@ import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Enumeration;
 import java.util.HexFormat;
@@ -27,12 +43,44 @@ import java.util.function.Function;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.objectweb.asm.ClassWriter.COMPUTE_FRAMES;
 import static org.objectweb.asm.ClassWriter.COMPUTE_MAXS;
 
-public class Utils {
+@CacheableTransform
+public abstract class DependencyPatchTransform implements TransformAction<DependencyPatchTransform.Parameters>  {
+
+    private static final Logger logger = Logging.getLogger(DependencyPatchTransform.class);
+
+    public record PatchInfo(String jarEntryName, byte[] classSha256, Function<ClassWriter, ClassVisitor> patcherFactory) {}
+
+    interface Parameters extends TransformParameters {
+        @Input
+        Property<String> getJarPattern();
+
+        @Input
+        ListProperty<PatchInfo> getPatches();
+    }
+
+    @Classpath
+    @InputArtifact
+    public abstract Provider<FileSystemLocation> getInputArtifact();
+
+    @Override
+    public void transform(@NotNull TransformOutputs outputs) {
+        File inputFile = getInputArtifact().get().getAsFile();
+        var jarPattern = Pattern.compile(getParameters().getJarPattern().get());
+
+        if (jarPattern.matcher(inputFile.getName()).find()) {
+            logger.info("Patching " + inputFile.getName());
+            File outputFile = outputs.file(inputFile.getName().replace(".jar", "-patched.jar"));
+            patchJar(inputFile, outputFile, getParameters().getPatches().get());
+        } else {
+            outputs.file(getInputArtifact());
+        }
+    }
 
     private static final MessageDigest SHA_256;
 
@@ -68,10 +116,10 @@ public class Utils {
      * is also thrown.
      * @param inputFile the JAR file to patch
      * @param outputFile the output (patched) JAR file
-     * @param patchers list of patcher info (classes to patch (jar entry name + optional SHA256 digest) and ASM visitor to transform them)
+     * @param patchers list of patch info (classes to patch (jar entry name + optional SHA256 digest) and ASM visitor to transform them)
      */
-    public static void patchJar(File inputFile, File outputFile, Collection<PatcherInfo> patchers) {
-        var classPatchers = patchers.stream().collect(Collectors.toMap(PatcherInfo::jarEntryName, Function.identity()));
+    public static void patchJar(File inputFile, File outputFile, Collection<PatchInfo> patchers) {
+        var classPatchers = patchers.stream().collect(Collectors.toMap(PatchInfo::jarEntryName, Function.identity()));
         var mismatchedClasses = new ArrayList<MismatchInfo>();
         try (JarFile jarFile = new JarFile(inputFile); JarOutputStream jos = new JarOutputStream(new FileOutputStream(outputFile))) {
             Enumeration<JarEntry> entries = jarFile.entries();
@@ -86,10 +134,10 @@ public class Utils {
                     byte[] classToPatch = jarFile.getInputStream(entry).readAllBytes();
                     var classSha256 = SHA_256.digest(classToPatch);
 
-                    if (classPatcher.matches(classSha256)) {
+                    if (Arrays.equals(classPatcher.classSha256(), classSha256)) {
                         ClassReader classReader = new ClassReader(classToPatch);
                         ClassWriter classWriter = new ClassWriter(classReader, COMPUTE_MAXS | COMPUTE_FRAMES);
-                        classReader.accept(classPatcher.createVisitor(classWriter), 0);
+                        classReader.accept(classPatcher.patcherFactory().apply(classWriter), 0);
                         jos.write(classWriter.toByteArray());
                     } else {
                         mismatchedClasses.add(

@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.dependencies.patches.awsv2sdk;
+package org.elasticsearch.gradle.internal.dependencies.patches;
 
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -20,9 +20,9 @@ import static org.objectweb.asm.Opcodes.ASM9;
 import static org.objectweb.asm.Opcodes.GETSTATIC;
 import static org.objectweb.asm.Opcodes.INVOKESTATIC;
 
-class StringFormatInPathResolverPatcher extends ClassVisitor {
+class AwsSdkStringFormatInPathResolverPatcher extends ClassVisitor {
 
-    StringFormatInPathResolverPatcher(ClassWriter classWriter) {
+    AwsSdkStringFormatInPathResolverPatcher(ClassWriter classWriter) {
         super(ASM9, classWriter);
     }
 

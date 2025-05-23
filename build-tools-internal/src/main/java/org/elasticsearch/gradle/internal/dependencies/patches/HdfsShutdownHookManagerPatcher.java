@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.dependencies.patches.hdfs;
+package org.elasticsearch.gradle.internal.dependencies.patches;
 
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -19,12 +19,12 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-class ShutdownHookManagerPatcher extends ClassVisitor {
+class HdfsShutdownHookManagerPatcher extends ClassVisitor {
     private static final String CLASSNAME = "org/apache/hadoop/util/ShutdownHookManager";
     private static final Set<String> VOID_METHODS = Set.of("addShutdownHook", "clearShutdownHooks");
     private static final Set<String> BOOLEAN_METHODS = Set.of("removeShutdownHook", "hasShutdownHook", "isShutdownInProgress");
 
-    ShutdownHookManagerPatcher(ClassWriter classWriter) {
+    HdfsShutdownHookManagerPatcher(ClassWriter classWriter) {
         super(Opcodes.ASM9, classWriter);
     }
 

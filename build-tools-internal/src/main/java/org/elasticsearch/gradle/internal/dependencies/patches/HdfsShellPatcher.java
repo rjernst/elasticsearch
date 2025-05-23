@@ -7,16 +7,16 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.dependencies.patches.hdfs;
+package org.elasticsearch.gradle.internal.dependencies.patches;
 
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-class ShellPatcher extends ClassVisitor {
+class HdfsShellPatcher extends ClassVisitor {
 
-    ShellPatcher(ClassWriter classWriter) {
+    HdfsShellPatcher(ClassWriter classWriter) {
         super(Opcodes.ASM9, classWriter);
     }
 

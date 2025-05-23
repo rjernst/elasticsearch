@@ -11,6 +11,7 @@ package org.elasticsearch.gradle.internal;
 
 import org.elasticsearch.gradle.VersionProperties;
 import org.elasticsearch.gradle.internal.conventions.precommit.PrecommitTaskPlugin;
+import org.elasticsearch.gradle.internal.dependencies.patches.DependencyPatchesPlugin;
 import org.elasticsearch.gradle.internal.info.BuildParameterExtension;
 import org.elasticsearch.gradle.internal.info.GlobalBuildInfoPlugin;
 import org.elasticsearch.gradle.internal.test.MutedTestPlugin;
@@ -67,6 +68,7 @@ public class ElasticsearchJavaBasePlugin implements Plugin<Project> {
         project.getPluginManager().apply(ElasticsearchTestBasePlugin.class);
         project.getPluginManager().apply(PrecommitTaskPlugin.class);
         project.getPluginManager().apply(MutedTestPlugin.class);
+        project.getPluginManager().apply(DependencyPatchesPlugin.class);
 
         configureConfigurations(project);
         configureCompile(project);
