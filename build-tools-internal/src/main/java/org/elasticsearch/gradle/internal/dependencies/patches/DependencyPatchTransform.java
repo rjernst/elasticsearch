@@ -31,6 +31,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -54,7 +55,7 @@ public abstract class DependencyPatchTransform implements TransformAction<Depend
 
     private static final Logger logger = Logging.getLogger(DependencyPatchTransform.class);
 
-    public record PatchInfo(String jarEntryName, byte[] classSha256, Function<ClassWriter, ClassVisitor> patcherFactory) {}
+    public record PatchInfo(String jarEntryName, byte[] classSha256, Function<ClassWriter, ClassVisitor> patcherFactory) implements Serializable {}
 
     interface Parameters extends TransformParameters {
         @Input

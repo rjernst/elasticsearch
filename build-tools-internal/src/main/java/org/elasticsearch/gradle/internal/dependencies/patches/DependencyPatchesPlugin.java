@@ -96,7 +96,7 @@ public class DependencyPatchesPlugin implements Plugin<Project> {
     public void apply(Project project) {
         var patched = Attribute.of("patched", Boolean.class);
 
-        project.getConfigurations().forEach(configuration -> {
+        project.getConfigurations().configureEach(configuration -> {
             configuration.getAttributes().attribute(patched, true);
         });
 
