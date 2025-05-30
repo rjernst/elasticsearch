@@ -51,11 +51,13 @@ import static org.objectweb.asm.ClassWriter.COMPUTE_FRAMES;
 import static org.objectweb.asm.ClassWriter.COMPUTE_MAXS;
 
 @CacheableTransform
-public abstract class DependencyPatchTransform implements TransformAction<DependencyPatchTransform.Parameters>  {
+public abstract class DependencyPatchTransform implements TransformAction<DependencyPatchTransform.Parameters> {
 
     private static final Logger logger = Logging.getLogger(DependencyPatchTransform.class);
 
-    public record PatchInfo(String jarEntryName, byte[] classSha256, Function<ClassWriter, ClassVisitor> patcherFactory) implements Serializable {}
+    public record PatchInfo(String jarEntryName, byte[] classSha256, Function<ClassWriter, ClassVisitor> patcherFactory)
+        implements
+            Serializable {}
 
     interface Parameters extends TransformParameters {
         @Input

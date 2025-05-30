@@ -25,11 +25,19 @@ import static java.util.Map.entry;
 
 public class DependencyPatchesPlugin implements Plugin<Project> {
 
-    private static final Map<String, List<PatchInfo>> patches = Map.ofEntries(
-        entry("aws-query-protocol", List.of(patchInfo("software/amazon/awssdk/protocols/query/internal/marshall/ListQueryMarshaller.class",
-            "213e84d9a745bdae4b844334d17aecdd6499b36df32aa73f82dc114b35043009",
-            AwsSdkStringFormatInPathResolverPatcher::new))),
-        entry("hadoop-common-2(?!.*tests)",
+    private static final Map<JarInfo, List<PatchInfo>> patches = Map.ofEntries(
+        entry(
+            jar("software.amazon.awssdk", "aws-query-protocol"),
+            List.of(
+                patchInfo(
+                    "software/amazon/awssdk/protocols/query/internal/marshall/ListQueryMarshaller.class",
+                    "213e84d9a745bdae4b844334d17aecdd6499b36df32aa73f82dc114b35043009",
+                    AwsSdkStringFormatInPathResolverPatcher::new
+                )
+            )
+        ),
+        entry(
+            jar("org.apache.hadoop", "hadoop-common", "hadoop-common-2(?!.*tests)"),
             List.of(
                 patchInfo(
                     "org/apache/hadoop/util/ShutdownHookManager.class",
@@ -46,47 +54,68 @@ public class DependencyPatchesPlugin implements Plugin<Project> {
                     "218078b8c77838f93d015c843775985a71f3c7a8128e2a9394410f0cd1da5f53",
                     HdfsSubjectGetSubjectPatcher::new
                 )
-            )),
-        entry("hadoop-common-3(?!.*tests)", List.of(
-            patchInfo(
-                "org/apache/hadoop/util/ShutdownHookManager.class",
-                "7720e8545a02de6fd03f4170f0e471d1301ef73d7d6a09097bad361f9e31f819",
-                HdfsShutdownHookManagerPatcher::new
-            ),
-            patchInfo(
-                "org/apache/hadoop/util/Shell.class",
-                "856d0b829cf550df826387af15fa1c772bc7d26d6461535b17b9d5114d308dc4",
-                HdfsShellPatcher::new
-            ),
-            patchInfo(
-                "org/apache/hadoop/security/UserGroupInformation.class",
-                "52f5973f35a282908d48a573a03c04f240a22c9f6007d7c5e7852aff1c641420",
-                HdfsSubjectGetSubjectPatcher::new
             )
-        )),
-        entry("hadoop-client-api", List.of(
-            patchInfo(
-                "org/apache/hadoop/util/ShutdownHookManager.class",
-                "90641e0726fc9372479728ef9b7ae2be20fb7ab4cddd4938e55ffecadddd4d94",
-                HdfsShutdownHookManagerPatcher::new
-            ),
-            patchInfo(
-                "org/apache/hadoop/util/Shell.class",
-                "8837c7f3eeda3f658fc3d6595f18e77a4558220ff0becdf3e175fa4397a6fd0c",
-                HdfsShellPatcher::new
-            ),
-            patchInfo(
-                "org/apache/hadoop/security/UserGroupInformation.class",
-                "3c34bbc2716a6c8f4e356e78550599b0a4f01882712b4f7787d032fb10527212",
-                HdfsSubjectGetSubjectPatcher::new
-            ),
-            patchInfo(
-                "org/apache/hadoop/security/authentication/client/KerberosAuthenticator.class",
-                "6bab26c1032a38621c20050ec92067226d1d67972d0d370e412ca25f1df96b76",
-                HdfsSubjectGetSubjectPatcher::new
+        ),
+        entry(
+            jar("org.apache.hadoop", "hadoop-common", "hadoop-common-3(?!.*tests)"),
+            List.of(
+                patchInfo(
+                    "org/apache/hadoop/util/ShutdownHookManager.class",
+                    "7720e8545a02de6fd03f4170f0e471d1301ef73d7d6a09097bad361f9e31f819",
+                    HdfsShutdownHookManagerPatcher::new
+                ),
+                patchInfo(
+                    "org/apache/hadoop/util/Shell.class",
+                    "856d0b829cf550df826387af15fa1c772bc7d26d6461535b17b9d5114d308dc4",
+                    HdfsShellPatcher::new
+                ),
+                patchInfo(
+                    "org/apache/hadoop/security/UserGroupInformation.class",
+                    "52f5973f35a282908d48a573a03c04f240a22c9f6007d7c5e7852aff1c641420",
+                    HdfsSubjectGetSubjectPatcher::new
+                )
             )
-        ))
+        ),
+        entry(
+            jar("org.apache.hadoop", "hadoop-client-api"),
+            List.of(
+                patchInfo(
+                    "org/apache/hadoop/util/ShutdownHookManager.class",
+                    "90641e0726fc9372479728ef9b7ae2be20fb7ab4cddd4938e55ffecadddd4d94",
+                    HdfsShutdownHookManagerPatcher::new
+                ),
+                patchInfo(
+                    "org/apache/hadoop/util/Shell.class",
+                    "8837c7f3eeda3f658fc3d6595f18e77a4558220ff0becdf3e175fa4397a6fd0c",
+                    HdfsShellPatcher::new
+                ),
+                patchInfo(
+                    "org/apache/hadoop/security/UserGroupInformation.class",
+                    "3c34bbc2716a6c8f4e356e78550599b0a4f01882712b4f7787d032fb10527212",
+                    HdfsSubjectGetSubjectPatcher::new
+                ),
+                patchInfo(
+                    "org/apache/hadoop/security/authentication/client/KerberosAuthenticator.class",
+                    "6bab26c1032a38621c20050ec92067226d1d67972d0d370e412ca25f1df96b76",
+                    HdfsSubjectGetSubjectPatcher::new
+                )
+            )
+        )
     );
+
+    private record JarInfo(String groupId, String artifactId, String jarRegex) {
+        String componentId() {
+            return groupId + ":" + artifactId;
+        }
+    }
+
+    private static JarInfo jar(String groupId, String artifactId) {
+        return new JarInfo(groupId, artifactId, artifactId);
+    }
+
+    private static JarInfo jar(String groupId, String artifactId, String jarRegex) {
+        return new JarInfo(groupId, artifactId, jarRegex);
+    }
 
     private static PatchInfo patchInfo(String jarEntryName, String classSha256, Function<ClassWriter, ClassVisitor> patcherFactory) {
         return new PatchInfo(jarEntryName, HexFormat.of().parseHex(classSha256), patcherFactory);
@@ -96,19 +125,21 @@ public class DependencyPatchesPlugin implements Plugin<Project> {
     public void apply(Project project) {
         var patched = Attribute.of("patched", Boolean.class);
 
-        project.getConfigurations().configureEach(configuration -> {
-            configuration.getAttributes().attribute(patched, true);
-        });
+        project.getConfigurations().configureEach(configuration -> { configuration.getAttributes().attribute(patched, true); });
 
         var deps = project.getDependencies();
-        deps.getAttributesSchema().attribute(patched);
+        deps.getAttributesSchema()
+            .attribute(patched, strategy -> { strategy.getCompatibilityRules().add(PatchedAttributeCompatibilityRule.class); });
         deps.getArtifactTypes().getByName("jar").getAttributes().attribute(patched, false);
+
         for (var patch : patches.entrySet()) {
+            deps.getComponents()
+                .withModule(patch.getKey().componentId(), details -> { details.getAttributes().attribute(patched, false); });
             deps.registerTransform(DependencyPatchTransform.class, spec -> {
                 spec.getFrom().attribute(patched, false);
                 spec.getTo().attribute(patched, true);
                 spec.parameters(params -> {
-                    params.getJarPattern().set(patch.getKey());
+                    params.getJarPattern().set(patch.getKey().jarRegex);
                     params.getPatches().set(patch.getValue());
                 });
             });
