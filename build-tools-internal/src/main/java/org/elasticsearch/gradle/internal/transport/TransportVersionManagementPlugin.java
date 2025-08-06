@@ -9,6 +9,7 @@
 
 package org.elasticsearch.gradle.internal.transport;
 
+import org.elasticsearch.gradle.internal.classscanner.ClassScannerPlugin;
 import org.elasticsearch.gradle.util.GradleUtils;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -22,13 +23,12 @@ public class TransportVersionManagementPlugin implements Plugin<Project> {
     @Override
     public void apply(Project project) {
         project.getPluginManager().apply(LifecycleBasePlugin.class);
+        project.getPluginManager().apply(ClassScannerPlugin.class);
 
         var collectTask = project.getTasks()
             .register("collectTransportVersionReferences", CollectTransportVersionReferencesTask.class, t -> {
                 t.setGroup("Transport Versions");
                 t.setDescription("Collects all TransportVersion references used throughout the project");
-                SourceSet mainSourceSet = GradleUtils.getJavaSourceSets(project).findByName(SourceSet.MAIN_SOURCE_SET_NAME);
-                t.getClassPath().setFrom(mainSourceSet.getOutput());
                 t.getOutputFile().set(project.getLayout().getBuildDirectory().file("transport-version/references.txt"));
             });
 
