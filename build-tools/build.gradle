@@ -135,6 +135,7 @@ dependencies {
     api buildLibs.apache.compress
     api buildLibs.ant
     api buildLibs.commmons.io
+    api project(':asm-util')
     implementation buildLibs.asm.tree
     implementation buildLibs.asm
     implementation buildLibs.jackson.core

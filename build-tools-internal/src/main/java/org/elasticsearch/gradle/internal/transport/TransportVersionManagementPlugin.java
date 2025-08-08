@@ -9,13 +9,11 @@
 
 package org.elasticsearch.gradle.internal.transport;
 
-import org.elasticsearch.gradle.internal.classscanner.ClassScannerPlugin;
-import org.elasticsearch.gradle.util.GradleUtils;
+import org.elasticsearch.gradle.classscanner.ClassScannerPlugin;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.file.Directory;
-import org.gradle.api.tasks.SourceSet;
 import org.gradle.language.base.plugins.LifecycleBasePlugin;
 
 public class TransportVersionManagementPlugin implements Plugin<Project> {

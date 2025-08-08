@@ -7,22 +7,22 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.classscanner;
+package org.elasticsearch.asm;
 
 import org.objectweb.asm.ModuleVisitor;
 
 import java.util.List;
 
-class DelegatingModuleVisitor extends ModuleVisitor {
+public class DelegatingModuleVisitor extends ModuleVisitor {
 
     private final List<ModuleVisitor> delegate;
 
-    private DelegatingModuleVisitor(int api, List<ModuleVisitor> delegates) {
+    protected DelegatingModuleVisitor(int api, List<ModuleVisitor> delegates) {
         super(api);
         this.delegate = delegates;
     }
 
-    static ModuleVisitor maybeWrap(int api, List<ModuleVisitor> delegates) {
+    public static ModuleVisitor maybeWrap(int api, List<ModuleVisitor> delegates) {
         if (delegates.isEmpty()) {
             return null;
         } else if (delegates.size() == 1) {

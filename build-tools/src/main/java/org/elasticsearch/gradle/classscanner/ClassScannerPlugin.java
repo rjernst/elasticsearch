@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.classscanner;
+package org.elasticsearch.gradle.classscanner;
 
 import org.elasticsearch.gradle.util.GradleUtils;
 import org.gradle.api.Plugin;

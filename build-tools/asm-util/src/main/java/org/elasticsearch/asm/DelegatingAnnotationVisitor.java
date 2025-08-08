@@ -7,40 +7,50 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.classscanner;
+package org.elasticsearch.asm;
 
 import org.objectweb.asm.AnnotationVisitor;
-import org.objectweb.asm.Attribute;
-import org.objectweb.asm.FieldVisitor;
-import org.objectweb.asm.TypePath;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class DelegatingFieldVisitor extends FieldVisitor {
+public class DelegatingAnnotationVisitor extends AnnotationVisitor {
+    private final List<AnnotationVisitor> delegates;
 
-    private final List<FieldVisitor> delegates;
-
-    protected DelegatingFieldVisitor(int api, List<FieldVisitor> delegates) {
+    protected DelegatingAnnotationVisitor(int api, List<AnnotationVisitor> delegates) {
         super(api);
         this.delegates = delegates;
     }
 
-    static FieldVisitor maybeWrap(int api, List<FieldVisitor> delegates) {
+    public static AnnotationVisitor maybeWrap(int api, List<AnnotationVisitor> delegates) {
         if (delegates.isEmpty()) {
             return null;
         } else if (delegates.size() == 1) {
             return delegates.getFirst();
         } else {
-            return new DelegatingFieldVisitor(api, delegates);
+            return new DelegatingAnnotationVisitor(api, delegates);
         }
     }
 
     @Override
-    public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+    public void visit(String name, Object value) {
+        for (AnnotationVisitor visitor : delegates) {
+            visitor.visit(name, value);
+        }
+    }
+
+    @Override
+    public void visitEnum(String name, String descriptor, String value) {
+        for (AnnotationVisitor visitor : delegates) {
+            visitor.visitEnum(name, descriptor, value);
+        }
+    }
+
+    @Override
+    public AnnotationVisitor visitAnnotation(String name, String descriptor) {
         List<AnnotationVisitor> visitors = new ArrayList<>();
-        for (var delegate : delegates) {
-            AnnotationVisitor visitor = delegate.visitAnnotation(descriptor, visible);
+        for (AnnotationVisitor delegate : delegates) {
+            AnnotationVisitor visitor = delegate.visitAnnotation(name, descriptor);
             if (visitor != null) {
                 visitors.add(visitor);
             }
@@ -49,27 +59,20 @@ public class DelegatingFieldVisitor extends FieldVisitor {
     }
 
     @Override
-    public AnnotationVisitor visitTypeAnnotation(int typeRef, TypePath typePath, String descriptor, boolean visible) {
+    public AnnotationVisitor visitArray(String name) {
         List<AnnotationVisitor> visitors = new ArrayList<>();
-        for (var delegate : delegates) {
-            AnnotationVisitor visitor = delegate.visitTypeAnnotation(typeRef, typePath, descriptor, visible);
+        for (AnnotationVisitor delegate : delegates) {
+            AnnotationVisitor visitor = delegate.visitArray(name);
             if (visitor != null) {
                 visitors.add(visitor);
             }
         }
         return DelegatingAnnotationVisitor.maybeWrap(api, visitors);
-    }
-
-    @Override
-    public void visitAttribute(Attribute attribute) {
-        for (var delegate : delegates) {
-            delegate.visitAttribute(attribute);
-        }
     }
 
     @Override
     public void visitEnd() {
-        for (var delegate : delegates) {
+        for (AnnotationVisitor delegate : delegates) {
             delegate.visitEnd();
         }
     }

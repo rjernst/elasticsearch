@@ -7,32 +7,32 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.classscanner;
+package org.elasticsearch.asm;
 
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.Attribute;
-import org.objectweb.asm.RecordComponentVisitor;
+import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.TypePath;
 
 import java.util.ArrayList;
 import java.util.List;
 
-class DelegatingRecordComponentVisitor extends RecordComponentVisitor {
+public class DelegatingFieldVisitor extends FieldVisitor {
 
-    private final List<RecordComponentVisitor> delegates;
+    private final List<FieldVisitor> delegates;
 
-    protected DelegatingRecordComponentVisitor(int api, List<RecordComponentVisitor> delegates) {
+    protected DelegatingFieldVisitor(int api, List<FieldVisitor> delegates) {
         super(api);
         this.delegates = delegates;
     }
 
-    static RecordComponentVisitor maybeWrap(int api, List<RecordComponentVisitor> delegates) {
+    public static FieldVisitor maybeWrap(int api, List<FieldVisitor> delegates) {
         if (delegates.isEmpty()) {
             return null;
         } else if (delegates.size() == 1) {
             return delegates.getFirst();
         } else {
-            return new DelegatingRecordComponentVisitor(api, delegates);
+            return new DelegatingFieldVisitor(api, delegates);
         }
     }
 

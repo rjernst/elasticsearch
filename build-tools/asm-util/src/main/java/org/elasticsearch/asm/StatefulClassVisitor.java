@@ -7,12 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-module org.elasticsearch.plugin.scanner {
-    requires org.elasticsearch.base;
-    requires org.objectweb.asm;
-    requires org.elasticsearch.plugin;
-    requires org.elasticsearch.xcontent;
-    requires org.elasticsearch.asm;
+package org.elasticsearch.asm;
 
-    exports org.elasticsearch.plugin.scanner;
+import java.io.IOException;
+import java.nio.file.Path;
+
+public interface StatefulClassVisitor {
+
+    void writeState(Path file) throws IOException;
 }

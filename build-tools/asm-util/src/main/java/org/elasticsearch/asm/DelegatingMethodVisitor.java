@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.classscanner;
+package org.elasticsearch.asm;
 
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.Attribute;
@@ -19,16 +19,16 @@ import org.objectweb.asm.TypePath;
 import java.util.ArrayList;
 import java.util.List;
 
-class DelegatingMethodVisitor extends MethodVisitor {
+public class DelegatingMethodVisitor extends MethodVisitor {
 
     private final List<MethodVisitor> delegates;
 
-    private DelegatingMethodVisitor(int api, List<MethodVisitor> delegate) {
+    protected DelegatingMethodVisitor(int api, List<MethodVisitor> delegate) {
         super(api);
         this.delegates = delegate;
     }
 
-    static MethodVisitor maybeWrap(int api, List<MethodVisitor> delegates) {
+    public static MethodVisitor maybeWrap(int api, List<MethodVisitor> delegates) {
         if (delegates.isEmpty()) {
             return null;
         } else if (delegates.size() == 1) {

@@ -20,6 +20,7 @@ dependencies {
   api project(':libs:plugin-api')
   api project(":libs:x-content")
 
+  api "org.elasticsearch:asm-util:${versions.elasticsearch}"
   api 'org.ow2.asm:asm:9.7.1'
   api 'org.ow2.asm:asm-tree:9.7.1'
 

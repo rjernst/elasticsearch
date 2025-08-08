@@ -13,6 +13,7 @@ plugins {
   id "com.gradle.develocity" version "4.0.1"
 }
 include 'reaper'
+include 'asm-util'
 
 dependencyResolutionManagement {
     versionCatalogs {

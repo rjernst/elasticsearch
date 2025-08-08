@@ -9,14 +9,12 @@
 
 package org.elasticsearch.gradle.internal.transport;
 
-import org.elasticsearch.gradle.internal.classscanner.ClassVisitorTask;
-import org.elasticsearch.gradle.internal.classscanner.StatefulClassVisitor;
+import org.elasticsearch.gradle.classscanner.ClassVisitorTask;
 import org.elasticsearch.gradle.internal.transport.TransportVersionUtils.TransportVersionReference;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.tasks.CacheableTask;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
-import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
@@ -24,15 +22,13 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -45,12 +41,10 @@ import java.util.Set;
 public abstract class CollectTransportVersionReferencesTask extends ClassVisitorTask {
     public static final String TRANSPORT_VERSION_SET_CLASS = "org/elasticsearch/TransportVersion";
     public static final String TRANSPORT_VERSION_SET_METHOD_NAME = "fromName";
-    public static final String CLASS_EXTENSION = ".class";
-    public static final String MODULE_INFO = "module-info.class";
 
     @Override
-    public Class<? extends StatefulClassVisitor> getClassVisitorClass() {
-        return TransportVersionReferenceCollector.class;
+    public String getVisitorClassName() {
+        return TransportVersionReferenceCollector.class.getName();
     }
 
     /**
@@ -82,16 +76,20 @@ public abstract class CollectTransportVersionReferencesTask extends ClassVisitor
         }
     }
 
-    public static class TransportVersionReferenceCollector extends StatefulClassVisitor {
+    public static class TransportVersionReferenceCollector extends ClassVisitor implements Closeable {
         private final Set<TransportVersionReference> results = new HashSet<>();
+        private final Path outputFile;
         private String classname;
 
-        public TransportVersionReferenceCollector() {}
+        public TransportVersionReferenceCollector(Path outputFile) {
+            super(Opcodes.ASM9);
+            this.outputFile = outputFile;
+        }
 
         @Override
-        public void writeState(Path file) throws IOException {
+        public void close() throws IOException {
             if (results.isEmpty() == false) {
-                Files.writeString(file, String.join("\n", results.stream().map(Object::toString).sorted().toList()));
+                Files.writeString(outputFile, String.join("\n", results.stream().map(Object::toString).sorted().toList()));
             }
         }
 

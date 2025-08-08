@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.classscanner;
+package org.elasticsearch.gradle.classscanner;
 
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.ConfigurableFileCollection;
@@ -19,7 +19,7 @@ import org.gradle.api.tasks.PathSensitivity;
 public abstract class ClassVisitorTask extends DefaultTask {
 
     @Input
-    public abstract Class<? extends StatefulClassVisitor> getClassVisitorClass();
+    public abstract String getVisitorClassName();
 
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)

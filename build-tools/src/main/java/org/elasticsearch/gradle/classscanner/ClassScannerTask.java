@@ -7,9 +7,8 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.gradle.internal.classscanner;
+package org.elasticsearch.gradle.classscanner;
 
-import org.apache.commons.io.IOUtils;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.Project;
 import org.gradle.api.file.ConfigurableFileCollection;
@@ -86,7 +85,7 @@ public abstract class ClassScannerTask extends DefaultTask {
 
         // setup state output
         List<ClassVisitorTask> visitorTasks = getClassVisitorTasks().get();
-        var visitorClasses = visitorTasks.stream().map(ClassVisitorTask::getClassVisitorClass).map(Class::getName).toList();
+        var visitorClasses = visitorTasks.stream().map(ClassVisitorTask::getVisitorClassName).toList();
 
         Path outputDir = getOutputDirectory().get().getAsFile().toPath();
         project.delete(outputDir);
@@ -96,7 +95,7 @@ public abstract class ClassScannerTask extends DefaultTask {
 
         Map<String, List<Path>> outputFilesByClass = new HashMap<>();
 
-        WorkQueue workQueue = getWorkerExecutor().noIsolation();
+        WorkQueue workQueue = getWorkerExecutor().processIsolation();
         for (int i = 0; i < numWorkers; ++i) {
             int batchSize = paths.size() / numWorkers;
             int beginNdx = i * batchSize;
@@ -112,7 +111,7 @@ public abstract class ClassScannerTask extends DefaultTask {
 
             workQueue.submit(ClassScannerWorker.class, p -> {
                 p.getClassFiles().set(paths.subList(beginNdx, endNdx));
-                p.getVisitorClasses().set(visitorClasses);
+                p.getVisitorClassNames().set(visitorClasses);
                 p.getOutputFiles().set(outputFiles.stream().map(Path::toAbsolutePath).map(Path::toString).toList());
             });
         }
@@ -120,7 +119,7 @@ public abstract class ClassScannerTask extends DefaultTask {
         workQueue.await();
 
         for (ClassVisitorTask task : visitorTasks) {
-            task.getVisitorStateFiles().setFrom(outputFilesByClass.get(task.getClassVisitorClass().getName()));
+            task.getVisitorStateFiles().setFrom(outputFilesByClass.get(task.getVisitorClassName()));
         }
     }
 }

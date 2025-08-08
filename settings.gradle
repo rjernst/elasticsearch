@@ -18,6 +18,9 @@ plugins {
   id 'elasticsearch.java-toolchain'
 }
 
+// for asm-util
+includeBuild("build-tools")
+
 enableFeaturePreview "STABLE_CONFIGURATION_CACHE"
 
 rootProject.name = "elasticsearch"
