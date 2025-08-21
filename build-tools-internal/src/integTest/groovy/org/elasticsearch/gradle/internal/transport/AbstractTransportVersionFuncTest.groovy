@@ -13,11 +13,15 @@ import org.elasticsearch.gradle.fixtures.AbstractGradleFuncTest
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.TaskOutcome
 
-class AbstractTransportVersionFuncTest extends AbstractGradleFuncTest {
-    def javaResource(String project, String path, String content) {
-        file("${project}/src/main/resources/${path}").withWriter { writer ->
-            writer << content
-        }
+import java.nio.file.Files
+import java.nio.file.Path
+
+abstract class AbstractTransportVersionFuncTest extends AbstractGradleFuncTest {
+
+    TransportVersionResources resources
+
+    def transportResource(String path, String content) {
+        Files.writeString(resources.transportResourcesDir.resolve(path), content)
     }
 
     def javaSource(String project, String packageName, String className, String imports, String content) {
@@ -34,11 +38,11 @@ class AbstractTransportVersionFuncTest extends AbstractGradleFuncTest {
     }
 
     def namedTransportVersion(String name, String ids) {
-        javaResource("myserver", "transport/definitions/named/" + name + ".csv", ids)
+        transportResource("definitions/named/" + name + ".csv", ids)
     }
 
     def unreferencedTransportVersion(String name, String id) {
-        javaResource("myserver", "transport/definitions/unreferenced/" + name + ".csv", id)
+        transportResource("definitions/unreferenced/" + name + ".csv", id)
     }
 
     def namedAndReferencedTransportVersion(String name, String ids) {
@@ -53,7 +57,7 @@ class AbstractTransportVersionFuncTest extends AbstractGradleFuncTest {
     }
 
     def latestTransportVersion(String branch, String name, String id) {
-        javaResource("myserver", "transport/latest/" + branch + ".csv","${name},${id}")
+        transportResource("latest/" + branch + ".csv","${name},${id}")
     }
 
     def validateReferencesFails(String project) {
@@ -115,5 +119,14 @@ class AbstractTransportVersionFuncTest extends AbstractGradleFuncTest {
         setupLocalGitRepo()
         execute("git checkout -b main")
         execute("git checkout -b test")
+
+        Path resourcesDir = projectDir.toPath().resolve("myserver/src/main/resources/transport")
+        resources = new TransportVersionResources(resourcesDir, projectDir.toPath()) {
+            @Override
+            protected String gitCommand(String... args) {
+                String command = "git " + String.join(" ", args)
+                return execute(command)
+            }
+        }
     }
 }

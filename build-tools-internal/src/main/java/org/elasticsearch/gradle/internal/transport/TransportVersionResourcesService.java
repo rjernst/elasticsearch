@@ -16,40 +16,20 @@ import org.gradle.process.ExecOperations;
 import org.gradle.process.ExecResult;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiFunction;
 
 import javax.inject.Inject;
 
 /**
- * An encapsulation of operations on transport version resources.
- *
- * <p>These are resource files to describe transport versions that will be loaded at Elasticsearch runtime. They exist
- * as jar resource files at runtime, and as a directory of resources at build time.
- *
- * <p>The layout of the transport version resources are as follows:
- * <ul>
- *     <li><b>/transport/definitions/named/</b>
- *     - Definitions that can be looked up by name. The name is the filename before the .csv suffix.</li>
- *     <li><b>/transport/definitions/unreferenced/</b>
- *     - Definitions which contain ids that are known at runtime, but cannot be looked up by name.</li>
- *     <li><b>/transport/latest/</b>
- *     - The latest transport version definition for each release branch.</li>
- * </ul>
+ * A build service to make accessing and transport version resources in a gradle context easier.
  */
-public abstract class TransportVersionResourcesService implements BuildService<TransportVersionResourcesService.Parameters> {
+public abstract class TransportVersionResourcesService extends TransportVersionResources
+    implements
+        BuildService<TransportVersionResourcesService.Parameters> {
 
     public interface Parameters extends BuildServiceParameters {
         DirectoryProperty getTransportResourcesDirectory();
@@ -60,168 +40,17 @@ public abstract class TransportVersionResourcesService implements BuildService<T
     @Inject
     public abstract ExecOperations getExecOperations();
 
-    private static final Path DEFINITIONS_DIR = Path.of("definitions");
-    private static final Path NAMED_DIR = DEFINITIONS_DIR.resolve("named");
-    private static final Path UNREFERENCED_DIR = DEFINITIONS_DIR.resolve("unreferenced");
-    private static final Path LATEST_DIR = Path.of("latest");
-
-    private final Path transportResourcesDir;
-    private final Path rootDir;
-    private final AtomicReference<Set<String>> mainResources = new AtomicReference<>(null);
-    private final AtomicReference<Set<String>> changedResources = new AtomicReference<>(null);
-
     @Inject
     public TransportVersionResourcesService(Parameters params) {
-        this.transportResourcesDir = params.getTransportResourcesDirectory().get().getAsFile().toPath();
-        this.rootDir = params.getRootDirectory().get().getAsFile().toPath();
+        super(directoryPath(params.getTransportResourcesDirectory()), directoryPath(params.getRootDirectory()));
     }
 
-    /**
-     * Return the directory for this repository which contains transport version resources.
-     * This should be an input to any tasks reading resources from this service.
-     */
-    Path getTransportResourcesDir() {
-        return transportResourcesDir;
+    private static Path directoryPath(DirectoryProperty directory) {
+        return directory.get().getAsFile().toPath();
     }
 
-    /**
-     * Return the transport version definitions directory for this repository.
-     * This should be an input to any tasks that only read definitions from this service.
-     */
-    Path getDefinitionsDir() {
-        return transportResourcesDir.resolve(DEFINITIONS_DIR);
-    }
-
-    // return the path, relative to the resources dir, of a named definition
-    private Path getNamedDefinitionRelativePath(String name) {
-        return NAMED_DIR.resolve(name + ".csv");
-    }
-
-    /** Return all named definitions, mapped by their name. */
-    Map<String, TransportVersionDefinition> getNamedDefinitions() throws IOException {
-        return readDefinitions(transportResourcesDir.resolve(NAMED_DIR));
-    }
-
-    /** Get a named definition from main if it exists there, or null otherwise */
-    TransportVersionDefinition getNamedDefinitionFromMain(String name) {
-        String resourcePath = getNamedDefinitionRelativePath(name).toString();
-        return getMainFile(resourcePath, TransportVersionDefinition::fromString);
-    }
-
-    /** Test whether the given named definition exists */
-    boolean namedDefinitionExists(String name) {
-        return Files.exists(transportResourcesDir.resolve(getNamedDefinitionRelativePath(name)));
-    }
-
-    /** Return the path within the repository of the given named definition */
-    Path getNamedDefinitionRepositoryPath(TransportVersionDefinition definition) {
-        return rootDir.relativize(transportResourcesDir.resolve(getNamedDefinitionRelativePath(definition.name())));
-    }
-
-    // return the path, relative to the resources dir, of an unreferenced definition
-    private Path getUnreferencedDefinitionRelativePath(String name) {
-        return UNREFERENCED_DIR.resolve(name + ".csv");
-    }
-
-    /** Return all unreferenced definitions, mapped by their name. */
-    Map<String, TransportVersionDefinition> getUnreferencedDefinitions() throws IOException {
-        return readDefinitions(transportResourcesDir.resolve(UNREFERENCED_DIR));
-    }
-
-    /** Get a named definition from main if it exists there, or null otherwise */
-    TransportVersionDefinition getUnreferencedDefinitionFromMain(String name) {
-        String resourcePath = getUnreferencedDefinitionRelativePath(name).toString();
-        return getMainFile(resourcePath, TransportVersionDefinition::fromString);
-    }
-
-    /** Return the path within the repository of the given named definition */
-    Path getUnreferencedDefinitionRepositoryPath(TransportVersionDefinition definition) {
-        return rootDir.relativize(transportResourcesDir.resolve(getUnreferencedDefinitionRelativePath(definition.name())));
-    }
-
-    /** Read all latest files and return them mapped by their release branch */
-    Map<String, TransportVersionLatest> getLatestByReleaseBranch() throws IOException {
-        Map<String, TransportVersionLatest> latests = new HashMap<>();
-        try (var stream = Files.list(transportResourcesDir.resolve(LATEST_DIR))) {
-            for (var latestFile : stream.toList()) {
-                String contents = Files.readString(latestFile, StandardCharsets.UTF_8).strip();
-                var latest = TransportVersionLatest.fromString(latestFile.getFileName().toString(), contents);
-                latests.put(latest.name(), latest);
-            }
-        }
-        return latests;
-    }
-
-    /** Retrieve the latest transport version for the given release branch on main */
-    TransportVersionLatest getLatestFromMain(String releaseBranch) {
-        String resourcePath = getLatestRelativePath(releaseBranch).toString();
-        return getMainFile(resourcePath, TransportVersionLatest::fromString);
-    }
-
-    /** Return the path within the repository of the given latest */
-    Path getLatestRepositoryPath(TransportVersionLatest latest) {
-        return rootDir.relativize(transportResourcesDir.resolve(getLatestRelativePath(latest.branch())));
-    }
-
-    private Path getLatestRelativePath(String releaseBranch) {
-        return LATEST_DIR.resolve(releaseBranch + ".csv");
-    }
-
-    // Return the transport version resources paths that exist in main
-    private Set<String> getMainResources() {
-        if (mainResources.get() == null) {
-            synchronized (mainResources) {
-                String output = gitCommand("ls-tree", "--name-only", "-r", "main", ".");
-
-                HashSet<String> resources = new HashSet<>();
-                Collections.addAll(resources, output.split(System.lineSeparator()));
-                mainResources.set(resources);
-            }
-        }
-        return mainResources.get();
-    }
-
-    // Return the transport version resources paths that have been changed relative to main
-    private Set<String> getChangedResources() {
-        if (changedResources.get() == null) {
-            synchronized (changedResources) {
-                String output = gitCommand("diff", "--name-only", "main", ".");
-
-                HashSet<String> resources = new HashSet<>();
-                Collections.addAll(resources, output.split(System.lineSeparator()));
-                changedResources.set(resources);
-            }
-        }
-        return changedResources.get();
-    }
-
-    // Read a transport version resource from the main branch, or return null if it doesn't exist on main
-    private <T> T getMainFile(String resourcePath, BiFunction<String, String, T> parser) {
-        if (getMainResources().contains(resourcePath) == false) {
-            return null;
-        }
-
-        String content = gitCommand("show", "main:." + File.separator + resourcePath).strip();
-        return parser.apply(resourcePath, content);
-    }
-
-    private static Map<String, TransportVersionDefinition> readDefinitions(Path dir) throws IOException {
-        if (Files.isDirectory(dir) == false) {
-            return Map.of();
-        }
-        Map<String, TransportVersionDefinition> definitions = new HashMap<>();
-        try (var definitionsStream = Files.list(dir)) {
-            for (var definitionFile : definitionsStream.toList()) {
-                String contents = Files.readString(definitionFile, StandardCharsets.UTF_8).strip();
-                var definition = TransportVersionDefinition.fromString(definitionFile.getFileName().toString(), contents);
-                definitions.put(definition.name(), definition);
-            }
-        }
-        return definitions;
-    }
-
-    // run a git command, relative to the transport version resources directory
-    private String gitCommand(String... args) {
+    @Override
+    protected String gitCommand(String... args) {
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
 
         List<String> command = new ArrayList<>();
