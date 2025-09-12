@@ -1,307 +1,280 @@
-Versioning Elasticsearch
-========================
+# Versioning in Elasticsearch
 
-Elasticsearch is a complicated product, and is run in many different scenarios.
-A single version number is not sufficient to cover the whole of the product,
-instead we need different concepts to provide versioning capabilities
-for different aspects of Elasticsearch, depending on their scope, updatability,
-responsiveness, and maintenance.
+Elasticsearch is a complex product used in many scenarios. A single version
+number is not enough to cover all aspects of the product. Instead, different
+versioning concepts are used that depend on scope, updatability,
+responsiveness, and maintenance needs.
 
-## Release version
+## Release Version
 
-This is the version number used for published releases of Elasticsearch,
-and the Elastic stack. This takes the form _major.minor.patch_,
-with a corresponding version id.
+This is the version number for published releases of Elasticsearch and the
+Elastic Stack. It uses the format _major.minor.patch_, plus a corresponding
+version id.
 
-Uses of this version number should be avoided, as it does not apply to
-some scenarios, and use of release version will break Elasticsearch nodes.
+Avoid using this version number in code, since it does not apply to all cases
+and may break Elasticsearch nodes.
 
-The release version is accessible in code through `Build.current().version()`,
-but it **should not** be assumed that this is a semantic version number,
-it could be any arbitrary string.
+You can access the release version in code via `Build.current().version()`,
+but do **not** assume it is a semantic version number—it may be any arbitrary
+string.
 
-## Transport protocol
+## Transport Protocol
 
-The transport protocol is used to send binary data between Elasticsearch nodes; a
-`TransportVersion` encapsulates versioning of this protocol.
-This version is negotiated between each pair of nodes in the cluster
-on first connection, selecting the highest shared version.
-This version is then accessible through the `getTransportVersion` method
-on `StreamInput` and `StreamOutput`, so serialization code can read/write
-objects in a form that will be understood by the other node.
+The transport protocol transfers binary data between Elasticsearch nodes.
+`TransportVersion` encapsulates versioning for this protocol. When two nodes
+connect, the highest shared version is selected. You can access this version
+with the `getTransportVersion` method in `StreamInput` and `StreamOutput`, so
+serialization code can read and write objects in a format understood by the
+other node.
 
-At a high level a `TransportVersion` contains one id per release branch it will
-be committed to. Each `TransportVersion` has a name selected when it is generated.
-In order to ensure consistency and robustness, all new `TransportVersion`s
-must first be created in the `main` branch and then backported to the relevant
-release branches.
+A `TransportVersion` has one id per release branch it will be committed to,
+with a name chosen when generated. To ensure consistency, all new
+`TransportVersion`s must be created in the `main` branch and then backported
+to the relevant release branches.
 
-### Internal state files
+### Internal State Files
 
-The Elasticsearch server jar contains resource files representing each
-transport version. These files are loaded at runtime to construct
-`TransportVersion` instances. Since each transport version has its own file
-they can be backported without conflict.
+The Elasticsearch server jar contains resource files for each transport
+version. These files are loaded at runtime to construct `TransportVersion`
+instances. Each version has its own file, allowing backports without
+conflict.
 
-Additional resource files represent the latest transport version known on
-each release branch. If two transport versions are added at the same time,
-there will be a conflict in these internal state files, forcing one to be
-regenerated to resolve the conflict before merging to `main`.
+Additional resource files represent the latest transport version for each
+release branch. If two transport versions are added at the same time, there
+will be a conflict in these state files, requiring one to be regenerated
+before merging to `main`.
 
-All of these internal state files are managed by gradle tasks; they should
-not be edited directly.
+All internal state files are managed by Gradle tasks and should not be edited
+directly.
 
-_Elastic developers_ - please see corresponding documentation for Serverless
-on creating transport versions for Serverless changes.
+_Elastic developers_: See the Serverless documentation about creating
+transport versions for Serverless changes.
 
-### Creating transport versions locally
+### Creating Transport Versions Locally
 
-To create a transport version, declare a reference anywhere in java code. For example:
+To create a transport version, declare a reference in Java code. For example:
 
-    private static final TransportVersion MY_NEW_TV = TransportVersion.fromName("my_new_tv");
+```java
+private static final TransportVersion MY_NEW_TV =
+    TransportVersion.fromName("my_new_tv");
+```
 
-`fromName` takes an arbitrary String name. The String must be a String literal;
-it cannot be a reference to a String. It must match the regex `[_0-9a-zA-Z]+`.
-You can reference the same transport version name from multiple classes, but
-you must not use an existing transport version name after it as already been
-committed to `main`.
+`fromName` takes a String literal matching the regex `[_0-9a-zA-Z]+`. You can
+reference the same name from multiple classes but must not reuse an existing
+name after it is committed to `main`.
 
-Once you have declared your `TransportVersion` you can use it in serialization code.
-For example, in a constructor that takes `StreamInput in`:
+Once declared, use your `TransportVersion` in serialization code. For example,
+in a constructor with `StreamInput in`:
 
-    if (in.getTransportVersion().supports(MY_NEW_TV)) {
-        // new serialization code
-    }
+```java
+if (in.getTransportVersion().supports(MY_NEW_TV)) {
+    // new serialization code
+}
+```
 
-Finally, in order to run Elasticsearch or run tests, the transport version ids
-must be generated. Run the following gradle task:
+To run Elasticsearch or tests, you must generate transport version ids.
+Run:
 
-    ./gradlew generateTransportVersion
+```
+./gradlew generateTransportVersion
+```
 
-This will generate the internal state to support the new transport version. If
-you also intend to backport your code, include branches you will backport to:
+To backport your code, include target branches:
 
-    ./gradlew generateTransportVersion --backport-branches=9.1,8.19
+```
+./gradlew generateTransportVersion --backport-branches=9.1,8.19
+```
 
-### Updating transport versions
+### Updating Transport Versions
 
-You can modify a transport version before it is merged to `main`. This includes
-renaming the transport version, updating the branches it will be backported to,
-or even removing the transport version itself.
+You can modify a transport version before merging to `main`, including
+renaming, updating branches, or removing the version.
 
-The generation task is idempotent. It can be re-run at any time and will result
-in a valid internal state. For example, if you want to add an additional
-backport branch, re-run the generation task with all the target backport
-branches:
+The generation task is idempotent and can be rerun anytime for a valid
+internal state. To add a backport branch, rerun with all target branches:
 
-    ./gradlew generateTransportVersion --backport-branches=9.1,9.0,8.19,8.18
+```
+./gradlew generateTransportVersion --backport-branches=9.1,9.0,8.19,8.18
+```
 
-You can also let CI handle updating transport versions for you. As version
-labels are updated on your PR, the generation task is automatically run with
-the appropriate backport branches and any changes to the internal state files
-are committed to your branch.
+CI can also update transport versions automatically. As version labels are
+updated on your PR, the generation task runs with the correct backport
+branches and commits internal state changes to your branch.
 
-Transport versions can also have additional branches added after merging to
-`main`. When doing so, you must include all branches the transport version was
-added to in addition to new branch. For example, if you originally committed
-your transport version `my_tv` to `main` and `9.1`, and then realized you also
-needed to backport to `8.19` you would run (in `main`):
+You can add branches after merging to `main`. For example, if you committed
+`my_tv` to `main` and `9.1`, but need to backport to `8.19`, run (in `main`):
 
-    ./gradlew generateTransportVersion --name=my_tv --backport-branches=9.1,8.19
+```
+./gradlew generateTransportVersion --name=my_tv --backport-branches=9.1,8.19
+```
 
-In the above case CI will not know what transport version name to update, so you
-must run the generate task again as described. After merging the updated transport
-version it will need to be backported to all the applicable branches.
+CI will not know what name to update, so you must run the generate task as
+shown. After merging, backport the updated version to all applicable
+branches.
 
-### Resolving merge conflicts
+### Resolving Merge Conflicts
 
-Transport versions are created sequentially. If two developers create a transport
-version at the same time, based on the same `main` commit, they will generate
-the same internal ids. The first of these two merged into `main` will "win", and
-the latter will have a merge conflict with `main`.
+Transport versions are created sequentially. If two developers create a
+version at the same time from the same `main` commit, they will generate the
+same internal ids. The first merged into `main` wins; the second has a merge
+conflict.
 
-In the event of a conflict, merge `main` into your branch. You will have
-conflict(s) with transport version internal state files. Run the following
-generate task to resolve the conflict(s):
+To resolve, merge `main` into your branch. You will have conflicts with
+transport version internal state files. Run:
 
-    ./gradlew generateTransportVersion --resolve-conflict
+```
+./gradlew generateTransportVersion --resolve-conflict
+```
 
-This command will regenerate your transport version and stage the updated
-state files in git. You can then proceed with your merge as usual.
+This command regenerates your transport version and stages updated state
+files in git. You can then finish the merge.
 
-### Reverting changes
+### Reverting Changes
 
-Transport versions cannot be removed, they can only be added. If the logic
-using a transport version needs to be reverted, it must be done with a
-new transport version.
+Transport versions cannot be removed, only added. If logic using a transport
+version must be reverted, do so with a new transport version.
 
-For example, if you have previously added a transport version named
-`original_tv` you could add `revert_tv` reversing the logic:
+For example, if you added `original_tv` and now want to revert it, add
+`revert_tv`:
 
-    TransportVersion tv = in.getTransportVersion();
-    if (tv.supports(ORIGINAL_TV) && tv.supports(REVERT_TV) == false) {
-        // serialization code being reverted
-    }
+```java
+TransportVersion tv = in.getTransportVersion();
+if (tv.supports(ORIGINAL_TV) && !tv.supports(REVERT_TV)) {
+    // serialization code being reverted
+}
+```
 
-### Minimum compatibility versions
+### Minimum Compatibility Versions
 
-The transport version used between two nodes is determined by the initial handshake
-(see `TransportHandshaker`, where the two nodes swap their highest known transport version).
-The lowest transport version that is compatible with the current node
-is determined by `TransportVersion.minimumCompatible()`,
-and the node is prevented from joining the cluster if it is below that version.
-This constant should be updated manually on a major release.
+The transport version used between nodes is set by the initial handshake (see
+`TransportHandshaker`). The minimum compatible transport version for the node
+is set by `TransportVersion.minimumCompatible()`. Nodes below this version
+cannot join the cluster. Update this constant manually during major releases.
 
-The minimum version that can be used for CCS is determined by
-`TransportVersion.minimumCCSVersion()`, but this is not actively checked
-before queries are performed. Only if a query cannot be serialized at that
-version is an action rejected. This constant is updated automatically
-as part of performing a release.
+The minimum version for CCS is set by `TransportVersion.minimumCCSVersion()`.
+This is not checked before queries, but if a query cannot be serialized at
+that version, it is rejected. This constant is updated automatically as part
+of releases.
 
-### Mapping to release versions
+### Mapping to Release Versions
 
-For releases that do use a version number, it can be confusing to encounter
-a log or exception message that references an arbitrary transport version,
-where you don't know which release version that corresponds to. This is where
-the `.toReleaseVersion()` method comes in. It uses metadata stored in a csv file
-(`TransportVersions.csv`) to map from the transport version id to the corresponding
-release version. For any transport versions it encounters without a direct map,
-it performs a best guess based on the information it has. The csv file
-is updated automatically as part of performing a release.
+Log and exception messages may reference arbitrary transport versions. To map
+these to release versions, use `.toReleaseVersion()`, which relies on metadata
+in `TransportVersions.csv`. For unmapped versions, a best guess is used. The
+CSV file is updated automatically during releases.
 
-In releases that do not have a release version number, that method becomes
-a no-op.
+For releases without a release version number, `.toReleaseVersion()` does
+nothing.
 
-## Index version
+## Index Version
 
-Index version is a single incrementing version number for the index data format,
-metadata, and associated mappings. It is declared the same way as the
-transport version - with the pattern `M_NNN_S_PP`, for the major version, version id,
-subsidiary version id, and patch number respectively.
+Index version is a single incrementing number for the index data format,
+metadata, and mappings. It is declared similarly to transport version, using
+the pattern `M_NNN_S_PP`.
 
-Index version is stored in index metadata when an index is created,
-and it is used to determine the storage format and what functionality that index supports.
-The index version does not change once an index is created.
+Index version is stored in index metadata at creation and determines the
+storage format and supported functionality. Once set, it does not change.
 
-In the same way as transport versions, when a change is needed to the index
-data format or metadata, or new mapping types are added, create a new version constant
-below the last one, incrementing the `NNN` version component.
+For changes to the index format, metadata, or mappings, create a new constant
+below the last one, incrementing the `NNN` component.
 
-Unlike transport version, version constants cannot be collapsed together,
-as an index keeps its creation version id once it is created.
-Fortunately, new index versions are only created once a month or so,
-so we don’t have a large list of index versions that need managing.
+Unlike transport versions, index version constants cannot be collapsed, as
+each index retains its creation version. Fortunately, new index versions are
+created infrequently, so the list is manageable.
 
-Similar to transport version, index version has a `toReleaseVersion` to map
-onto release versions, in appropriate situations.
+Index version also has a `toReleaseVersion` method for mapping to release
+versions when relevant.
 
 ## Cluster Features
 
-Cluster features are identifiers, published by a node in cluster state,
-indicating they support a particular top-level operation or set of functionality.
-They are used for internal checks within Elasticsearch, and for gating tests
-on certain functionality. For example, to check all nodes have upgraded
-to a certain point before running a large migration operation to a new data format.
-Cluster features should not be referenced by anything outside the Elasticsearch codebase.
+Cluster features are identifiers published by nodes in cluster state to signal
+support for particular operations or functionalities. They are used for
+internal checks and for gating tests on certain features, such as verifying
+all nodes have upgraded before migrations. **Cluster features should not be
+used outside the Elasticsearch codebase.**
 
-Cluster features are indicative of top-level functionality introduced to
-Elasticsearch - e.g. a new transport endpoint, or new operations.
+Cluster features indicate top-level functionality, such as a new transport
+endpoint or operation.
 
-It is also used to check nodes can join a cluster - once all nodes in a cluster
-support a particular feature, no nodes can then join the cluster that do not
-support that feature. This is to ensure that once a feature is supported
-by a cluster, it will then always be supported in the future.
+They also check if nodes can join a cluster. Once all nodes support a
+feature, no new node can join without supporting it. This ensures features
+remain supported in the future.
 
-To declare a new cluster feature, add an implementation of the `FeatureSpecification` SPI,
-suitably registered (or use an existing one for your code area), and add the feature
-as a constant to be returned by getFeatures. To then check whether all nodes
-in the cluster support that feature, use the method `clusterHasFeature` on `FeatureService`.
-It is only possible to check whether all nodes in the cluster have a feature;
-individual node checks should not be done.
+To declare a new cluster feature, add an implementation of the
+`FeatureSpecification` SPI, register it, and add the feature as a constant
+returned by `getFeatures`. To check whether all nodes support a feature, use
+`clusterHasFeature` on `FeatureService`. Checking individual nodes is not
+supported.
 
-Once a cluster feature is declared and deployed, it cannot be modified or removed,
-else new nodes will not be able to join existing clusters.
-If functionality represented by a cluster feature needs to be removed,
-a new cluster feature should be added indicating that functionality is no longer
-supported, and the code modified accordingly (bearing in mind additional BwC constraints).
+Once deployed, cluster features cannot be modified or removed. Otherwise, new
+nodes may not join existing clusters. If a feature needs removal, add a new
+feature indicating the functionality is no longer supported, and update code
+accordingly, keeping backward compatibility in mind.
 
-The cluster features infrastructure is only designed to support a few hundred features
-per major release, and once features are added to a cluster they can not be removed.
-Cluster features should therefore be used sparingly.
-Adding too many cluster features risks increasing cluster instability.
+The infrastructure is designed for a few hundred features per major release.
+Since features cannot be removed, use them sparingly to avoid instability.
 
-When we release a new major version N, we limit our backwards compatibility
-to the highest minor of the previous major N-1. Therefore, any cluster formed
-with the new major version is guaranteed to have all features introduced during
-releases of major N-1. All such features can be deemed to be met by the cluster,
-and the features themselves can be removed from cluster state over time,
-and the feature checks removed from the code of major version N.
+When releasing a new major version _N_, backward compatibility is limited to
+the highest minor of the previous major (_N-1_). Clusters with the new major
+version are guaranteed to have all features from the previous major, so these
+checks can be removed over time.
 
 ### Testing
 
-Tests often want to check if a certain feature is implemented / available on all nodes,
-particularly BwC or mixed cluster test.
+Tests often verify feature availability across all nodes, especially in
+backward compatibility or mixed-cluster scenarios. Instead of adding a
+production feature for tests, add a _test feature_ via
+`FeatureSpecification.getTestFeatures`, which is only set in integration test
+clusters. Prefer Capabilities for test conditions when possible.
 
-Rather than introducing a production feature just for a test condition,
-this can be done by adding a _test feature_ in an implementation of
-`FeatureSpecification.getTestFeatures`. These features will only be set
-on clusters running as part of an integration test. Even so, cluster features
-should be used sparingly if possible; Capabilities is generally a better
-option for test conditions.
+In Java REST tests, use `ESRestTestCase.clusterHasFeature(feature)`.
 
-In Java Rest tests, checking cluster features can be done using
-`ESRestTestCase.clusterHasFeature(feature)`
+In YAML REST tests, specify conditions in `requires` or `skip` sections using
+cluster features. See [the documentation](https://github.com/elastic/elasticsearch/blob/main/rest-api-spec/src/yamlRestTest/resources/rest-api-spec/test/README.asciidoc#skipping-tests) for details.
 
-In YAML Rest tests, conditions can be defined in the `requires` or `skip` sections
-that use cluster features; see [here](https://github.com/elastic/elasticsearch/blob/main/rest-api-spec/src/yamlRestTest/resources/rest-api-spec/test/README.asciidoc#skipping-tests) for more information.
-
-To aid with backwards compatibility tests, the test framework adds synthetic features
-for each previously released Elasticsearch version, of the form `gte_v{VERSION}`
-(for example `gte_v8.14.2`).
-This can be used to add conditions based on previous releases. It _cannot_ be used
-to check the current snapshot version; real features or capabilities should be
-used instead.
+For backward compatibility tests, the framework adds synthetic features for
+each previously released Elasticsearch version, named `gte_v{VERSION}`
+(e.g., `gte_v8.14.2`). These can be used for conditions based on previous
+releases, but **not** for checking the current snapshot version—use real
+features or capabilities instead.
 
 ## Capabilities
 
-The Capabilities API is a REST API for external clients to check the capabilities
-of an Elasticsearch cluster. As it is dynamically calculated for every query,
-it is not limited in size or usage.
+The Capabilities API is a REST endpoint that lets external clients check the
+capabilities of an Elasticsearch cluster. It is dynamically calculated for
+each query, so there is no limit on size or usage.
 
-A capabilities query can be used to query for 3 things:
+A capabilities query can answer:
+
 * Is this endpoint supported for this HTTP method?
-* Are these parameters of this endpoint supported?
-* Are these capabilities (arbitrary string ids) of this endpoint supported?
+* Are these parameters for this endpoint supported?
+* Are these capabilities (arbitrary string IDs) for this endpoint supported?
 
-The API will return with a simple true/false, indicating if all specified aspects
-of the endpoint are supported by all nodes in the cluster.
-If any aspect is not supported by any one node, the API returns `false`.
+The API returns `true` if all specified aspects are supported by all nodes.
+If any aspect is unsupported by any node, it returns `false`. If there are
+communication problems, the response is `supported: null`.
 
-The API can also return `supported: null` (indicating unknown)
-if there was a problem communicating with one or more nodes in the cluster.
+All registered endpoints automatically support existence checks. To add
+parameter and feature capability queries to your REST endpoint, implement
+`supportedQueryParameters` and `supportedCapabilities` in your handler.
 
-All registered endpoints automatically work with the endpoint existence check.
-To add support for parameter and feature capability queries to your REST endpoint,
-implement the `supportedQueryParameters` and `supportedCapabilities` methods in your rest handler.
+To perform a capability query, send a REST call to the `_capabilities` API
+with parameters: `method`, `path`, `parameters`, and `capabilities`. The call
+checks every node and returns `{supported: true}` only if all nodes support
+the specified combination; otherwise, it returns `{supported: false}` or
+`{supported: null}` if support cannot be determined. Use
+`ESRestTestCase.clusterHasCapability` to check capabilities in tests.
 
-To perform a capability query, perform a REST call to the `_capabilities` API,
-with parameters `method`, `path`, `parameters`, `capabilities`.
-The call will query every node in the cluster, and return `{supported: true}`
-if all nodes support that specific combination of method, path, query parameters,
-and endpoint capabilities. If any single aspect is not supported,
-the query will return `{supported: false}`. If there are any problems
-communicating with nodes in the cluster, the response will be `{supported: null}`
-indicating support or lack thereof cannot currently be determined.
-Capabilities can be checked using the clusterHasCapability method in ESRestTestCase.
+YAML tests can specify skip and requires conditions with capabilities, for
+example:
 
-Similar to cluster features, YAML tests can have skip and requires conditions
-specified with capabilities like the following:
+```yaml
+- requires:
+    capabilities:
+      - method: GET
+        path: /_endpoint
+        parameters: [param1, param2]
+        capabilities: [cap1, cap2]
+```
 
-    - requires:
-        capabilities:
-          - method: GET
-            path: /_endpoint
-            parameters: [param1, param2]
-            capabilities: [cap1, cap2]
-
-method: GET is the default, and does not need to be explicitly specified.
+Note: `method: GET` is the default and does not need to be specified.
