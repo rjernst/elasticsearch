@@ -11,6 +11,7 @@ package org.elasticsearch.plugin.scanner;
 
 import org.elasticsearch.plugin.Component;
 import org.elasticsearch.plugin.Extensible;
+import org.elasticsearch.plugin.Extension;
 import org.elasticsearch.plugin.MultipleRegistryEntries;
 import org.elasticsearch.plugin.NamedComponent;
 import org.elasticsearch.plugin.RegistryCtor;
@@ -21,19 +22,24 @@ import org.elasticsearch.xcontent.XContentFactory;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BiFunction;
+import java.util.stream.Stream;
 
 public class ManifestBuilder {
 
@@ -41,14 +47,18 @@ public class ManifestBuilder {
     public static void main(String[] args) throws IOException {
         List<ClassReader> classReaders = ClassReaders.ofClassPath();
 
-        List<String> components = findComponents(classReaders);
+        List<String> componentsClasses = findComponents(classReaders);
         Map<String, List<EntryInfo>> registries = findRegistries(classReaders);
         Map<String, List<NamedComponentInfo>> namedComponents = findNamedComponents(classReaders);
+        Map<String, Set<String>> extensionsFields = findExtensionsFields(ClassReaders.ofPaths(Stream.of(Path.of(args[1]))));
+
         Path outputFile = Path.of(args[0]);
-        ManifestBuilder.writeToFile(components, registries, namedComponents, outputFile);
+        ManifestBuilder.writeToFile(componentsClasses, extensionsFields, registries, namedComponents, outputFile);
     }
 
-    public static void writeToFile(List<String> components, Map<String, List<EntryInfo>> registries, Map<String, List<NamedComponentInfo>> namedComponents, Path outputFile) throws IOException {
+    public static void writeToFile(List<String> componentsClasses, Map<String, Set<String>> extensionsFields,
+                                   Map<String, List<EntryInfo>> registries,
+                                   Map<String, List<NamedComponentInfo>> namedComponents, Path outputFile) throws IOException {
         Files.createDirectories(outputFile.getParent());
 
         try (OutputStream outputStream = Files.newOutputStream(outputFile)) {
@@ -57,7 +67,17 @@ public class ManifestBuilder {
 
                 builder.startObject();
 
-                builder.array("components", components.toArray(new String[0]));
+                builder.array("components", componentsClasses.toArray(new String[0]));
+
+                builder.startObject("extensions_fields");
+                for (Map.Entry<String, Set<String>> entry : extensionsFields.entrySet()) {
+                    builder.startArray(entry.getKey());
+                    for (var value : entry.getValue()) {
+                        builder.value(value);
+                    }
+                    builder.endArray();
+                }
+                builder.endObject();
 
                 builder.startObject("registries");
                 for (var entry : registries.entrySet()) {
@@ -240,6 +260,63 @@ public class ManifestBuilder {
         multiRegistryEntryScanner.visit(classReaders);
 
         return registries;
+    }
+
+    private static Map<String, Set<String>> findExtensionsFields(List<ClassReader> classReaders) {
+        Set<String> extensibleClasses = new HashSet<>();
+        Map<String, Set<String>> extensionFields = new HashMap<>();
+
+        // TODO: merge with component scanner?
+        for (ClassReader classReader : classReaders) {
+            classReader.accept(new ClassVisitor(Opcodes.ASM9) {
+                private String currentClassName;
+
+                @Override
+                public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+                    currentClassName = pathToClassName(name);
+                }
+
+                @Override
+                public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+                    if (descriptor.equals(Type.getDescriptor(Extensible.class))) {
+                        extensibleClasses.add(currentClassName);
+                    }
+                    return super.visitAnnotation(descriptor, visible);
+                }
+
+                @Override
+                public FieldVisitor visitField(int access, String fieldName, String descriptor, String signature, Object value) {
+                    if (Modifier.isStatic(access) == false || Modifier.isFinal(access) == false) {
+                        return super.visitField(access, fieldName, descriptor, signature, value);
+                    }
+                    return new FieldVisitor(Opcodes.ASM9) {
+                        @Override
+                        public AnnotationVisitor visitAnnotation(String annotationDescriptor, boolean visible) {
+                            if (annotationDescriptor.equals(Type.getDescriptor(Extension.class))) {
+                                Type type = Type.getType(descriptor);
+                                extensionFields.compute(type.getClassName(), (k, set) -> {
+                                    if (set == null) {
+                                        set = new HashSet<>();
+                                    }
+                                    set.add(currentClassName + "#" + fieldName);
+                                    return set;
+                                });
+                            }
+                            return super.visitAnnotation(annotationDescriptor, visible);
+                        }
+                    };
+                }
+            }, ClassReader.SKIP_CODE);
+        }
+
+        if (extensibleClasses.containsAll(extensionFields.keySet()) == false) {
+            System.out.println(extensibleClasses);
+            System.out.println(extensionFields);
+            extensionFields.keySet().removeAll(extensibleClasses);
+            // TODO: we don't scan dependencies now, so we can't check that class actually extends the right thing
+//            throw new RuntimeException("Some extension fields are not defined as extensible classes: " + extensionFields.values());
+        }
+        return extensionFields;
     }
 
     private static String pathToClassName(String classWithSlashes) {

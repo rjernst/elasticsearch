@@ -7,10 +7,16 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.injection.spec;
+package org.elasticsearch.plugin;
 
-/**
- * Indicates that there is just one way to inject {@link #requestedType}.
- */
-public sealed interface UnambiguousSpec extends InjectionSpec
-    permits ExistingInstanceSpec, ExistingMultipleInstancesSpec, MethodHandleSpec, SubtypeSpec {}
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+import static java.lang.annotation.ElementType.FIELD;
+import static java.lang.annotation.ElementType.TYPE;
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(value = { TYPE, FIELD })
+public @interface Extension {
+}

@@ -7,10 +7,10 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.injection.spec;
+package org.elasticsearch.threadpool;
 
-/**
- * Indicates that there is just one way to inject {@link #requestedType}.
- */
-public sealed interface UnambiguousSpec extends InjectionSpec
-    permits ExistingInstanceSpec, ExistingMultipleInstancesSpec, MethodHandleSpec, SubtypeSpec {}
+import org.elasticsearch.common.settings.Settings;
+
+public interface ThreadPoolSpec<T extends ExecutorBuilder.ExecutorSettings> {
+    ExecutorBuilder<T> toBuilder(Settings settings);
+}

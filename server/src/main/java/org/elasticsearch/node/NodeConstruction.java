@@ -159,6 +159,7 @@ import org.elasticsearch.persistent.PersistentTasksExecutorRegistry;
 import org.elasticsearch.persistent.PersistentTasksService;
 import org.elasticsearch.plugins.ActionPlugin;
 import org.elasticsearch.plugins.AnalysisPlugin;
+import org.elasticsearch.plugins.BundleInfo;
 import org.elasticsearch.plugins.BundleManifest;
 import org.elasticsearch.plugins.CircuitBreakerPlugin;
 import org.elasticsearch.plugins.ClusterCoordinationPlugin;
@@ -218,7 +219,10 @@ import org.elasticsearch.telemetry.metric.MeterRegistry;
 import org.elasticsearch.telemetry.tracing.Tracer;
 import org.elasticsearch.threadpool.DefaultBuiltInExecutorBuilders;
 import org.elasticsearch.threadpool.ExecutorBuilder;
+import org.elasticsearch.threadpool.FixedExecutorBuilderSpec;
+import org.elasticsearch.threadpool.ScalingExecutorBuilderSpec;
 import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.threadpool.ThreadPoolSpec;
 import org.elasticsearch.threadpool.internal.BuiltInExecutorBuilders;
 import org.elasticsearch.transport.Transport;
 import org.elasticsearch.transport.TransportService;
@@ -236,9 +240,11 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -285,8 +291,17 @@ class NodeConstruction {
 
             Settings settings = constructor.createEnvironment(initialEnvironment, serviceProvider, pluginsLoader);
             constructor.loadLoggingDataProviders();
+
+            List<org.elasticsearch.injection.Injector> pluginsInjectors = constructor.pluginsService.flatMapBundle(bundle -> {
+                Map<Class<?>, List<?>> extensionsInstancesFromPlugin = loadExtensionsInstancesFromPlugin(bundle);
+                org.elasticsearch.injection.Injector pluginInjector = org.elasticsearch.injection.Injector.create();
+
+                pluginInjector.addExtensionsInstances(extensionsInstancesFromPlugin);
+                return Collections.singleton(pluginInjector);
+            }).toList();
+
             TelemetryProvider telemetryProvider = constructor.createTelemetryProvider(settings);
-            ThreadPool threadPool = constructor.createThreadPool(settings, telemetryProvider.getMeterRegistry());
+            ThreadPool threadPool = constructor.createThreadPool(settings, telemetryProvider.getMeterRegistry(), pluginsInjectors);
 
             final SettingsModule settingsModule;
             try (var ignored = threadPool.getThreadContext().newStoredContext()) {
@@ -417,6 +432,52 @@ class NodeConstruction {
         return Optional.of(plugin);
     }
 
+    private static Map<Class<?>, List<?>> loadExtensionsInstancesFromPlugin(BundleInfo bundle) {
+        Plugin plugin = bundle.instance();
+        ClassLoader loader = plugin.getClass().getClassLoader();
+
+        Map<String, List<String>> extensionsFields = bundle.manifest().extensionsFields();
+
+        Map<Class<?>, List<?>> extensionsInstances = new HashMap<>();
+        for (Map.Entry<String, List<String>> entry : extensionsFields.entrySet()) {
+            String extensibleClassName = entry.getKey();
+            Class<?> extensibleClass;
+            try {
+                extensibleClass = loader.loadClass(extensibleClassName);
+            } catch (ClassNotFoundException e) {
+                throw new AssertionError(e);
+            }
+            List<Object> instances = entry.getValue().stream()
+                .map(extensionFieldName -> getExtensionInstanceFromField(extensionFieldName, loader))
+                .toList();
+            extensionsInstances.put(extensibleClass, instances);
+        }
+
+        // TODO: we need to have all Extensible classes in the map,
+        //  otherwise, Injector won't know anything about them and will fail attempting to find a suitable constructor
+        extensionsInstances.putIfAbsent(FixedExecutorBuilderSpec.class, Collections.emptyList());
+        extensionsInstances.putIfAbsent(ScalingExecutorBuilderSpec.class, Collections.emptyList());
+
+        return extensionsInstances;
+    }
+
+    private static Object getExtensionInstanceFromField(String extensionFieldName, ClassLoader loader) {
+        String[] parts = extensionFieldName.split("#");
+        if (parts.length != 2) {
+            throw new IllegalArgumentException("Incorrect field name [" + extensionFieldName + "]");
+        }
+        String className = parts[0];
+        String fieldName = parts[1];
+        try {
+            Class<?> cls = loader.loadClass(className);
+            Field declaredField = cls.getDeclaredField(fieldName);
+            return declaredField.get(null);
+        } catch (ClassNotFoundException | NoSuchFieldException | IllegalAccessException e) {
+            // should not be possible, all classes were discovered within the bundle
+            throw new AssertionError(e);
+        }
+    }
+
     private Settings createEnvironment(Environment initialEnvironment, NodeServiceProvider serviceProvider, PluginsLoader pluginsLoader) {
         // Pass the node settings to the DeprecationLogger class so that it can have the deprecation.skip_deprecated_settings setting:
         Settings envSettings = initialEnvironment.settings();
@@ -489,11 +550,19 @@ class NodeConstruction {
         return getSinglePlugin(TelemetryPlugin.class).map(p -> p.getTelemetryProvider(settings)).orElse(TelemetryProvider.NOOP);
     }
 
-    private ThreadPool createThreadPool(Settings settings, MeterRegistry meterRegistry) throws IOException {
+    private ThreadPool createThreadPool(Settings settings, MeterRegistry meterRegistry,
+                                        List<org.elasticsearch.injection.Injector> pluginsInjectors) throws IOException {
+        Collection<ThreadPoolSpec<?>> builderSpecs = pluginsInjectors.stream()
+            .map(injector -> injector.inject(List.of(RecordBuilderSpecs.class)))
+            .map(m -> (RecordBuilderSpecs) m.get(RecordBuilderSpecs.class))
+            .flatMap(RecordBuilderSpecs::specsStream)
+            .toList();
+
         ThreadPool threadPool = new ThreadPool(
             settings,
             meterRegistry,
             pluginsService.loadSingletonServiceProvider(BuiltInExecutorBuilders.class, DefaultBuiltInExecutorBuilders::new),
+            builderSpecs,
             pluginsService.flatMap(p -> p.getExecutorBuilders(settings)).toArray(ExecutorBuilder<?>[]::new)
         );
         resourcesToClose.add(() -> ThreadPool.terminate(threadPool, 10, TimeUnit.SECONDS));
@@ -1894,5 +1963,11 @@ class NodeConstruction {
 
     private Set<IndexSettingProvider> builtinIndexSettingProviders() {
         return Set.of(new IndexMode.IndexModeSettingsProvider());
+    }
+
+    public record RecordBuilderSpecs(Collection<FixedExecutorBuilderSpec> fixedSpec, Collection<ScalingExecutorBuilderSpec> scalingSpec) {
+        public Stream<ThreadPoolSpec<?>> specsStream() {
+            return Stream.concat(fixedSpec.stream(), scalingSpec.stream());
+        }
     }
 }

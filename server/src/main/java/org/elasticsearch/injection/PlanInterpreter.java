@@ -11,6 +11,7 @@ package org.elasticsearch.injection;
 
 import org.elasticsearch.core.SuppressForbidden;
 import org.elasticsearch.injection.spec.MethodHandleSpec;
+import org.elasticsearch.injection.spec.ParameterModifier;
 import org.elasticsearch.injection.spec.ParameterSpec;
 import org.elasticsearch.injection.step.CreateCollectionProxyStep;
 import org.elasticsearch.injection.step.CreateInstanceProxyStep;
@@ -70,7 +71,15 @@ final class PlanInterpreter {
 
     PlanInterpreter(Map<Class<?>, Object> existingInstances, ProxyPool proxyPool) {
         this.proxyPool = proxyPool;
-        existingInstances.forEach(this::addInstance);
+        for (Map.Entry<Class<?>, Object> entry : existingInstances.entrySet()) {
+            Class<?> type = entry.getKey();
+            Object value = entry.getValue();
+            if (value instanceof Collection<?> values) {
+                addInstances(type, values);
+            } else {
+                addInstance(type, value);
+            }
+        }
     }
 
     /**
@@ -181,7 +190,11 @@ final class PlanInterpreter {
     }
 
     private Object parameterValue(ParameterSpec parameterSpec) {
-        return theInstanceOf(parameterSpec.formalType());
+        if (parameterSpec.modifiers().contains(ParameterModifier.COLLECTION)) {
+            return instancesOf(parameterSpec.injectableType());
+        } else {
+            return theInstanceOf(parameterSpec.formalType());
+        }
     }
 
 }

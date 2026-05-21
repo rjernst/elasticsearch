@@ -11,6 +11,7 @@ package org.elasticsearch.injection;
 
 import org.elasticsearch.injection.spec.AmbiguousSpec;
 import org.elasticsearch.injection.spec.ExistingInstanceSpec;
+import org.elasticsearch.injection.spec.ExistingMultipleInstancesSpec;
 import org.elasticsearch.injection.spec.InjectionSpec;
 import org.elasticsearch.injection.spec.MethodHandleSpec;
 import org.elasticsearch.injection.spec.ParameterSpec;
@@ -115,6 +116,10 @@ final class Planner {
         switch (spec) {
             case ExistingInstanceSpec e -> {
                 // Nothing to do. The injector will already have the required object.
+                logger.trace("{}- Plan {}", indent(depth), e);
+            }
+            case ExistingMultipleInstancesSpec e -> {
+                // Nothing to do. The injector will already have the required objects.
                 logger.trace("{}- Plan {}", indent(depth), e);
             }
             case MethodHandleSpec m -> {
