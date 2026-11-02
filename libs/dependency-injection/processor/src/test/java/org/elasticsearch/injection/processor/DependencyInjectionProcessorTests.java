@@ -145,6 +145,33 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
         );
     }
 
+    public void testArrayOfParameterizedConstructorParameterFails() {
+        CompilationResult result = compile("test.Foo", """
+            package test;
+            import java.util.List;
+            import org.elasticsearch.injection.api.Component;
+            @Component
+            public class Foo {
+                public Foo(List<String>[] names) {}
+            }
+            """);
+
+        assertErrorContaining(result, "parameterized type java.util.List<java.lang.String>[] is not injectable");
+    }
+
+    public void testTypeVariableConstructorParameterFails() {
+        CompilationResult result = compile("test.Foo", """
+            package test;
+            import org.elasticsearch.injection.api.Component;
+            @Component
+            public class Foo<T> {
+                public Foo(T value) {}
+            }
+            """);
+
+        assertErrorContaining(result, "type variable T is not injectable");
+    }
+
     public void testAbstractComponentFails() {
         CompilationResult result = compile("test.Foo", """
             package test;
@@ -239,7 +266,7 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
                 "  \"registries\": {",
                 "    \"sample\": [",
                 "      {\"class\": \"test.Params\", \"factory\": \"<init>\", \"attributes\": {\"name\": \"params\", "
-                    + "\"category\": \"test.Category\", \"aliases\": [], \"kind\": \"ONE\", \"weight\": 1}}",
+                    + "\"category\": \"test.Category\", \"deprecatedNames\": [], \"kind\": \"ONE\", \"weight\": 1}}",
                 "    ]",
                 "  }",
                 "}",
@@ -257,7 +284,7 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleKind;
             import org.elasticsearch.injection.processor.sample.SampleReader;
-            @SampleEntry(name = "params", category = Category.class, aliases = { "a", "b\\"c" }, kind = SampleKind.TWO, weight = 7)
+            @SampleEntry(name = "params", category = Category.class, deprecatedNames = { "a", "b\\"c" }, kind = SampleKind.TWO, weight = 7)
             public class Params implements Category {
                 private Params() {}
                 @SampleReader
@@ -273,7 +300,7 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             result.manifest()
                 .contains(
                     "{\"class\": \"test.Params\", \"factory\": \"read\", \"attributes\": {\"name\": \"params\", "
-                        + "\"category\": \"test.Category\", \"aliases\": [\"a\", \"b\\\"c\"], \"kind\": \"TWO\", \"weight\": 7}}"
+                        + "\"category\": \"test.Category\", \"deprecatedNames\": [\"a\", \"b\\\"c\"], \"kind\": \"TWO\", \"weight\": 7}}"
                 )
         );
     }
@@ -459,6 +486,33 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
         }
 
         assertErrorContaining(compile(sources), "duplicate [sample] entry with category [test.Category] and name [params]");
+    }
+
+    public void testDeprecatedNameCollidingWithNameFails() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("test.Category", CATEGORY);
+        sources.put("test.First", """
+            package test;
+            import org.elasticsearch.injection.processor.sample.SampleEntry;
+            import org.elasticsearch.injection.processor.sample.SampleReader;
+            @SampleEntry(name = "params", category = Category.class)
+            public class First implements Category {
+                @SampleReader
+                public First(String in) {}
+            }
+            """);
+        sources.put("test.Second", """
+            package test;
+            import org.elasticsearch.injection.processor.sample.SampleEntry;
+            import org.elasticsearch.injection.processor.sample.SampleReader;
+            @SampleEntry(name = "other", category = Category.class, deprecatedNames = { "params" })
+            public class Second implements Category {
+                @SampleReader
+                public Second(String in) {}
+            }
+            """);
+
+        assertErrorContaining(compile(sources), "and name [params]");
     }
 
     public void testSameNameInDifferentRegistriesIsNotADuplicate() throws Exception {

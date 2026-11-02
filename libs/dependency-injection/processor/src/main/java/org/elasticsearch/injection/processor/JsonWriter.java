@@ -30,6 +30,9 @@ final class JsonWriter {
     JsonWriter value(Object value) {
         if (value instanceof String s) {
             string(s);
+        } else if (value instanceof Double d && Double.isFinite(d) == false || value instanceof Float f && Float.isFinite(f) == false) {
+            // NaN and the infinities have no JSON representation
+            throw new IllegalArgumentException("non-finite number [" + value + "] cannot be written as JSON");
         } else if (value instanceof Boolean || value instanceof Number) {
             out.append(value);
         } else if (value instanceof List<?> list) {

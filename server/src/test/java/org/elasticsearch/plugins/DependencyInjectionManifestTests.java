@@ -12,6 +12,7 @@ package org.elasticsearch.plugins;
 import org.elasticsearch.plugins.DependencyInjectionManifest.ComponentInfo;
 import org.elasticsearch.plugins.DependencyInjectionManifest.RegistryEntryInfo;
 import org.elasticsearch.test.ESTestCase;
+import org.elasticsearch.test.compiler.InMemoryJavaCompiler;
 import org.elasticsearch.test.jar.JarUtils;
 
 import java.io.ByteArrayInputStream;
@@ -19,6 +20,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -133,48 +135,49 @@ public class DependencyInjectionManifestTests extends ESTestCase {
         assertThat(merged.registries().keySet(), equalTo(Set.of("named_writeable", "persistent_task", "named_xcontent")));
     }
 
-    public void testLoadFromJars() throws IOException {
-        Path dir = createTempDir();
-        Path withManifest = dir.resolve("with.jar");
-        Path withoutManifest = dir.resolve("without.jar");
-        JarUtils.createJarWithEntries(
-            withManifest,
-            Map.of(DependencyInjectionManifest.RESOURCE_PATH, SAMPLE.getBytes(StandardCharsets.UTF_8))
-        );
-        JarUtils.createJarWithEntries(withoutManifest, Map.of("a/B.class", new byte[] { 1 }));
+    public void testLoadFromBundleDir() throws IOException {
+        Path bundle = createTempDir();
+        assertThat(DependencyInjectionManifest.load(bundle), sameInstance(DependencyInjectionManifest.EMPTY));
 
-        assertThat(DependencyInjectionManifest.load(List.of(withManifest.toUri().toURL())), equalTo(parse(SAMPLE)));
-        assertThat(DependencyInjectionManifest.load(List.of(withoutManifest.toUri().toURL())), equalTo(DependencyInjectionManifest.EMPTY));
-        assertThat(
-            DependencyInjectionManifest.load(List.<URL>of(withoutManifest.toUri().toURL(), withManifest.toUri().toURL())),
-            equalTo(parse(SAMPLE))
-        );
-        assertThat(DependencyInjectionManifest.load(List.<URL>of()), equalTo(DependencyInjectionManifest.EMPTY));
+        Files.writeString(bundle.resolve(DependencyInjectionManifest.FILE_NAME), SAMPLE);
+        assertThat(DependencyInjectionManifest.load(bundle), equalTo(parse(SAMPLE)));
     }
 
-    public void testLoadFromJarWithBadVersionNamesJar() throws IOException {
-        Path jar = createTempDir().resolve("bad.jar");
+    public void testLoadFromBundleDirWithBadVersionNamesFile() throws IOException {
+        Path bundle = createTempDir();
+        Files.writeString(bundle.resolve(DependencyInjectionManifest.FILE_NAME), "{\"version\": 7}");
+
+        IllegalStateException e = expectThrows(IllegalStateException.class, () -> DependencyInjectionManifest.load(bundle));
+        assertThat(e.getMessage(), containsString(DependencyInjectionManifest.FILE_NAME));
+    }
+
+    public void testLoadFromResource() throws Exception {
+        Path dir = createTempDir();
+        Path jar = dir.resolve("with.jar");
         JarUtils.createJarWithEntries(
             jar,
-            Map.of(DependencyInjectionManifest.RESOURCE_PATH, "{\"version\": 7}".getBytes(StandardCharsets.UTF_8))
+            Map.of(
+                "p/Owner.class",
+                InMemoryJavaCompiler.compile("p.Owner", "package p; public class Owner {}"),
+                DependencyInjectionManifest.RESOURCE_PATH,
+                SAMPLE.getBytes(StandardCharsets.UTF_8)
+            )
+        );
+        Path otherJar = dir.resolve("without.jar");
+        JarUtils.createJarWithEntries(
+            otherJar,
+            Map.of("q/Other.class", InMemoryJavaCompiler.compile("q.Other", "package q; public class Other {}"))
         );
 
-        IllegalStateException e = expectThrows(
-            IllegalStateException.class,
-            () -> DependencyInjectionManifest.load(List.of(jar.toUri().toURL()))
-        );
-        assertThat(e.getMessage(), containsString("bad.jar"));
-    }
-
-    public void testLoadFromClassLoader() throws IOException {
-        Path jar = createTempDir().resolve("with.jar");
-        JarUtils.createJarWithEntries(jar, Map.of(DependencyInjectionManifest.RESOURCE_PATH, SAMPLE.getBytes(StandardCharsets.UTF_8)));
-
-        try (URLClassLoader loader = new URLClassLoader(new URL[] { jar.toUri().toURL() }, null)) {
-            assertThat(DependencyInjectionManifest.load(loader), equalTo(parse(SAMPLE)));
-        }
-        try (URLClassLoader loader = new URLClassLoader(new URL[0], null)) {
-            assertThat(DependencyInjectionManifest.load(loader), equalTo(DependencyInjectionManifest.EMPTY));
+        try (
+            URLClassLoader withLoader = new URLClassLoader(new URL[] { jar.toUri().toURL() }, null);
+            URLClassLoader withoutLoader = new URLClassLoader(new URL[] { otherJar.toUri().toURL() }, null)
+        ) {
+            assertThat(DependencyInjectionManifest.loadFromResource(withLoader.loadClass("p.Owner")), equalTo(parse(SAMPLE)));
+            assertThat(
+                DependencyInjectionManifest.loadFromResource(withoutLoader.loadClass("q.Other")),
+                equalTo(DependencyInjectionManifest.EMPTY)
+            );
         }
     }
 }

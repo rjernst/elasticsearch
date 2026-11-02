@@ -10,8 +10,6 @@
 package org.elasticsearch.plugins;
 
 import org.elasticsearch.core.Nullable;
-import org.elasticsearch.core.PathUtils;
-import org.elasticsearch.core.SuppressForbidden;
 import org.elasticsearch.xcontent.XContentParser;
 import org.elasticsearch.xcontent.XContentParserConfiguration;
 import org.elasticsearch.xcontent.json.JsonXContent;
@@ -19,19 +17,13 @@ import org.elasticsearch.xcontent.json.JsonXContent;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.jar.JarFile;
-import java.util.zip.ZipEntry;
 
 /**
  * The build-time dependency injection index of a single jar (or of everything visible to a class loader), as written by the
@@ -72,8 +64,11 @@ public record DependencyInjectionManifest(List<ComponentInfo> components, Map<St
         }
     }
 
-    /** The location of the manifest within a jar. */
-    public static final String RESOURCE_PATH = "META-INF/elasticsearch/dependency-injection.json";
+    /** The name of the manifest file at the root of a plugin or module bundle directory. */
+    public static final String FILE_NAME = "dependency-injection.json";
+
+    /** The location of the manifest within a jar, used for the server's own manifest. */
+    public static final String RESOURCE_PATH = "META-INF/elasticsearch/" + FILE_NAME;
 
     /** The only manifest format version this class can read. */
     private static final int SUPPORTED_VERSION = 1;
@@ -96,46 +91,30 @@ public record DependencyInjectionManifest(List<ComponentInfo> components, Map<St
     }
 
     /**
-     * Reads and merges the manifests found in the given jars (or class directories). Jars without a manifest are skipped.
-     * This deliberately does not go through a class loader: parent delegation would surface the server's own manifest for every plugin.
+     * Reads the manifest from the root of a plugin or module bundle directory, or returns {@link #EMPTY} if the bundle has none.
      */
-    public static DependencyInjectionManifest load(Collection<URL> jarUrls) {
-        DependencyInjectionManifest result = EMPTY;
-        for (URL url : jarUrls) {
-            try {
-                DependencyInjectionManifest manifest = loadFromJar(url);
-                if (manifest != null) {
-                    result = result.merge(manifest);
-                }
-            } catch (IOException e) {
-                throw new UncheckedIOException("Failed to read dependency injection manifest from [" + url + "]", e);
-            }
+    public static DependencyInjectionManifest load(Path bundleDir) {
+        Path file = bundleDir.resolve(FILE_NAME);
+        if (Files.exists(file) == false) {
+            return EMPTY;
         }
-        return result;
+        try (InputStream in = Files.newInputStream(file)) {
+            return load(in, file.toString());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read dependency injection manifest [" + file + "]", e);
+        }
     }
 
     /**
-     * Reads and merges every manifest visible to the given class loader, including those of its parents.
+     * Reads the manifest the build embedded in the jar that contains {@code owner}, or returns {@link #EMPTY} if it has none. This is how
+     * the server reads its own manifest, since the server is not a bundle. The server is a named module, so only its own jar is consulted.
      */
-    public static DependencyInjectionManifest load(ClassLoader loader) {
-        DependencyInjectionManifest result = EMPTY;
-        try {
-            Enumeration<URL> resources = loader.getResources(RESOURCE_PATH);
-            while (resources.hasMoreElements()) {
-                URL url = resources.nextElement();
-                try (InputStream in = openStream(url)) {
-                    result = result.merge(load(in, url.toString()));
-                }
-            }
+    public static DependencyInjectionManifest loadFromResource(Class<?> owner) {
+        try (InputStream in = owner.getResourceAsStream("/" + RESOURCE_PATH)) {
+            return in == null ? EMPTY : load(in, owner.getName() + " resource [" + RESOURCE_PATH + "]");
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to read dependency injection manifests", e);
+            throw new UncheckedIOException("Failed to read dependency injection manifest of [" + owner.getName() + "]", e);
         }
-        return result;
-    }
-
-    @SuppressForbidden(reason = "class loader resources are jar or file urls, never sockets")
-    private static InputStream openStream(URL url) throws IOException {
-        return url.openStream();
     }
 
     /**
@@ -154,35 +133,6 @@ public record DependencyInjectionManifest(List<ComponentInfo> components, Map<St
         registries.forEach((key, entries) -> mergedRegistries.put(key, new ArrayList<>(entries)));
         other.registries.forEach((key, entries) -> mergedRegistries.computeIfAbsent(key, k -> new ArrayList<>()).addAll(entries));
         return new DependencyInjectionManifest(mergedComponents, mergedRegistries);
-    }
-
-    @Nullable
-    @SuppressForbidden(reason = "need access to the jar file")
-    private static DependencyInjectionManifest loadFromJar(URL url) throws IOException {
-        Path path;
-        try {
-            path = PathUtils.get(url.toURI());
-        } catch (URISyntaxException e) {
-            throw new IOException("Invalid jar url [" + url + "]", e);
-        }
-        if (Files.isDirectory(path)) {
-            Path resource = path.resolve(RESOURCE_PATH);
-            if (Files.exists(resource) == false) {
-                return null;
-            }
-            try (InputStream in = Files.newInputStream(resource)) {
-                return load(in, resource.toString());
-            }
-        }
-        try (JarFile jar = new JarFile(path.toFile())) {
-            ZipEntry entry = jar.getEntry(RESOURCE_PATH);
-            if (entry == null) {
-                return null;
-            }
-            try (InputStream in = jar.getInputStream(entry)) {
-                return load(in, path.toString());
-            }
-        }
     }
 
     private static DependencyInjectionManifest load(InputStream json, String source) throws IOException {

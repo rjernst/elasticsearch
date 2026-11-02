@@ -13,6 +13,8 @@ import org.elasticsearch.gradle.VersionProperties;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.file.CopySpec;
+import org.gradle.api.file.RelativePath;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
@@ -34,8 +36,10 @@ import javax.inject.Inject;
  * {@link JavaCompile} to the project's minimum runtime toolchain, so the processor cannot run inside
  * {@code compileJava}. It runs in a separate {@code -proc:only} compilation on a Java 25 toolchain instead,
  * and the directory holding the manifest is added to the main source set output so that the {@code jar} task
- * and test runtime classpaths pick it up. The processor only writes a resource, so no {@code module-info}
- * augmentation or jar swapping is needed.
+ * and test runtime classpaths pick it up; that copy is what the server reads for itself. Plugins and modules
+ * additionally ship the manifest at the root of their bundle (see {@link #addManifestToBundle}), because the node
+ * sees a bundle as a flat directory of jars and reads the manifest from the directory instead of searching jars.
+ * The processor only writes a resource, so no {@code module-info} augmentation or jar swapping is needed.
  */
 public class ElasticsearchDependencyInjectionPlugin implements Plugin<Project> {
 
@@ -48,6 +52,11 @@ public class ElasticsearchDependencyInjectionPlugin implements Plugin<Project> {
     static final String PROCESSOR_CONFIGURATION_NAME = "dependencyInjectionProcessor";
     static final String PROCESS_ANNOTATIONS_TASK_NAME = "processDependencyInjectionAnnotations";
     static final String GENERATED_DIR = "generated-dependency-injection";
+
+    /** Where the processor writes the manifest, relative to the task's destination directory. */
+    private static final String MANIFEST_RESOURCE = "META-INF/elasticsearch/dependency-injection.json";
+    /** Where a plugin or module bundle carries the manifest, relative to the bundle root. */
+    private static final String BUNDLE_MANIFEST_FILE = "dependency-injection.json";
 
     private final JavaToolchainService javaToolchains;
 
@@ -75,6 +84,19 @@ public class ElasticsearchDependencyInjectionPlugin implements Plugin<Project> {
 
         TaskProvider<JavaCompile> processAnnotations = registerProcessAnnotationsTask(project, mainSourceSet, processorConfiguration);
         mainSourceSet.getOutput().dir(processAnnotations.flatMap(JavaCompile::getDestinationDirectory));
+    }
+
+    /**
+     * Copies the manifest to the root of a plugin or module bundle, where the node reads it from. The server is not a bundle, so it
+     * instead reads the copy embedded in its jar.
+     */
+    public static void addManifestToBundle(Project project, CopySpec bundleSpec) {
+        TaskProvider<JavaCompile> processAnnotations = project.getTasks().named(PROCESS_ANNOTATIONS_TASK_NAME, JavaCompile.class);
+        bundleSpec.from(processAnnotations, spec -> {
+            spec.include(MANIFEST_RESOURCE);
+            spec.eachFile(file -> file.setRelativePath(new RelativePath(true, BUNDLE_MANIFEST_FILE)));
+            spec.setIncludeEmptyDirs(false);
+        });
     }
 
     private TaskProvider<JavaCompile> registerProcessAnnotationsTask(

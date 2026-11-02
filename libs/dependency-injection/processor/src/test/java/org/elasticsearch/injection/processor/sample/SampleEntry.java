@@ -31,7 +31,7 @@ public @interface SampleEntry {
 
     Class<?> category();
 
-    String[] aliases() default {};
+    String[] deprecatedNames() default {};
 
     SampleKind kind() default SampleKind.ONE;
 

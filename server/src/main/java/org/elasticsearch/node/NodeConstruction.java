@@ -543,7 +543,7 @@ class NodeConstruction {
 
         pluginsService = serviceProvider.newPluginService(initialEnvironment, pluginsLoader);
         modules.bindToInstance(PluginsService.class, pluginsService);
-        serverManifest = DependencyInjectionManifest.load(NodeConstruction.class.getClassLoader());
+        serverManifest = DependencyInjectionManifest.loadFromResource(NodeConstruction.class);
         logManifests();
         Settings settings = Node.mergePluginSettings(pluginsService.pluginMap(), envSettings);
 

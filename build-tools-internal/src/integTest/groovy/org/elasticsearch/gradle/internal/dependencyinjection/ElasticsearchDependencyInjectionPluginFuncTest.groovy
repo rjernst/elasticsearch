@@ -120,6 +120,14 @@ class ElasticsearchDependencyInjectionPluginFuncTest extends AbstractGradleInter
             // processor coordinates, which cannot be resolved here without repositories. Substitute the dummy.
             configurations.dependencyInjectionProcessor.dependencies.clear()
 
+            // stand-in for a plugin bundle, which takes the manifest from the plugin's bundle spec
+            def bundleSpec = copySpec()
+            org.elasticsearch.gradle.internal.dependencyinjection.ElasticsearchDependencyInjectionPlugin.addManifestToBundle(project, bundleSpec)
+            tasks.register('bundle', Sync) {
+                into layout.buildDirectory.dir('bundle')
+                with bundleSpec
+            }
+
             dependencies {
                 compileOnly project(':fakeprocessor')
                 dependencyInjectionProcessor project(':fakeprocessor')
@@ -137,6 +145,16 @@ class ElasticsearchDependencyInjectionPluginFuncTest extends AbstractGradleInter
         def manifest = manifestFromJar()
         manifest != null
         manifest.contains('"class": "test.Service"')
+    }
+
+    def "bundle contains the manifest at its root"() {
+        when:
+        def result = gradleRunner('bundle').build()
+
+        then:
+        result.task(":processDependencyInjectionAnnotations").outcome == TaskOutcome.SUCCESS
+        file("build/bundle/dependency-injection.json").text.contains('"class": "test.Service"')
+        file("build/bundle/META-INF").exists() == false
     }
 
     private String manifestFromJar() {

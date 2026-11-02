@@ -36,6 +36,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 import javax.tools.Diagnostic;
@@ -124,8 +125,8 @@ public final class DependencyInjectionProcessor extends AbstractProcessor {
             try (OutputStream out = resource.openOutputStream()) {
                 out.write(manifest.toJson().getBytes(StandardCharsets.UTF_8));
             }
-        } catch (IOException e) {
-            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "Could not write " + MANIFEST_PATH + ": " + e);
+        } catch (IOException | IllegalArgumentException e) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "Could not write " + MANIFEST_PATH + ": " + e.getMessage());
         }
     }
 
@@ -210,8 +211,16 @@ public final class DependencyInjectionProcessor extends AbstractProcessor {
             boolean valid = true;
             for (VariableElement parameter : constructor.getParameters()) {
                 TypeMirror parameterType = parameter.asType();
-                if (parameterType instanceof DeclaredType declared && declared.getTypeArguments().isEmpty() == false) {
+                // the manifest records erased names, so a type that erasure would change cannot be matched exactly
+                TypeMirror elementType = parameterType;
+                while (elementType instanceof ArrayType array) {
+                    elementType = array.getComponentType();
+                }
+                if (elementType instanceof DeclaredType declared && declared.getTypeArguments().isEmpty() == false) {
                     error(parameter, "parameterized type " + parameterType + " is not injectable; declare a named interface instead");
+                    valid = false;
+                } else if (elementType.getKind() == TypeKind.TYPEVAR) {
+                    error(parameter, "type variable " + parameterType + " is not injectable; declare a concrete type instead");
                     valid = false;
                 } else {
                     parameterTypes.add(binaryName(parameterType));
@@ -306,13 +315,21 @@ public final class DependencyInjectionProcessor extends AbstractProcessor {
             }
 
             var entry = new RegistryEntryModel(registryType.key(), binaryName(type.asType()), factory, attributes);
-            String id = registryType.key() + "/" + entry.category() + "/" + entry.name();
-            if (seenEntries.add(id) == false) {
-                error(
-                    element,
-                    "duplicate [" + registryType.key() + "] entry with category [" + entry.category() + "] and name [" + entry.name() + "]"
-                );
-                return;
+            // deprecated names resolve to the entry just like its name, so they must be unique within the category too
+            List<String> names = new ArrayList<>();
+            names.add(entry.name());
+            if (attributes.get("deprecatedNames") instanceof List<?> deprecatedNames) {
+                deprecatedNames.forEach(n -> names.add(n.toString()));
+            }
+            for (String name : names) {
+                String id = registryType.key() + "/" + entry.category() + "/" + name;
+                if (seenEntries.add(id) == false) {
+                    error(
+                        element,
+                        "duplicate [" + registryType.key() + "] entry with category [" + entry.category() + "] and name [" + name + "]"
+                    );
+                    return;
+                }
             }
             manifest.add(entry);
         } catch (IllegalArgumentException e) {

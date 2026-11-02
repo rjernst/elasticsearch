@@ -57,6 +57,7 @@ public class BaseInternalPluginBuildPlugin implements Plugin<Project> {
                 internalDependency(project, ":test:framework", "org.elasticsearch.test:framework:" + VersionProperties.getElasticsearch())
             );
         var extension = project.getExtensions().getByType(PluginPropertiesExtension.class);
+        ElasticsearchDependencyInjectionPlugin.addManifestToBundle(project, extension.getBundleSpec());
 
         // We've ported this from multiple build scripts where we see this pattern into
         // an extension method as a first step of consolidation.

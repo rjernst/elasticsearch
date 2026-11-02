@@ -427,7 +427,7 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
         // stable plugins use their own api and are not part of dependency injection
         DependencyInjectionManifest manifest = pluginBundle.pluginDescriptor().isStable()
             ? DependencyInjectionManifest.EMPTY
-            : DependencyInjectionManifest.load(pluginBundle.allUrls);
+            : DependencyInjectionManifest.load(pluginBundle.getDir());
 
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         try {

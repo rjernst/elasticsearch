@@ -841,10 +841,12 @@ public class PluginsServiceTests extends ESTestCase {
                 package p;
                 import org.elasticsearch.plugins.Plugin;
                 public class ManifestPlugin extends Plugin {}
-                """), DependencyInjectionManifest.RESOURCE_PATH, """
-                {"version": 1, "components": [{"class": "p.Foo", "constructor": [], "interfaces": []}]}
-                """.getBytes(StandardCharsets.UTF_8))
+                """))
         );
+        // the manifest is a file at the root of the bundle, next to the jars
+        Files.writeString(withManifest.resolve(DependencyInjectionManifest.FILE_NAME), """
+            {"version": 1, "components": [{"class": "p.Foo", "constructor": [], "interfaces": []}]}
+            """);
 
         final Path withoutManifest = plugins.resolve("without-manifest");
         Files.createDirectories(withoutManifest);
