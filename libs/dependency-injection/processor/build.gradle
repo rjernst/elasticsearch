@@ -1,0 +1,48 @@
+/*
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the "Elastic License
+ * 2.0", the "GNU Affero General Public License v3.0 only", and the "Server Side
+ * Public License v 1"; you may not use this file except in compliance with, at
+ * your election, the "Elastic License 2.0", the "GNU Affero General Public
+ * License v3.0 only", or the "Server Side Public License, v 1".
+ */
+import org.elasticsearch.gradle.internal.precommit.CheckForbiddenApisTask
+
+apply plugin: 'elasticsearch.java'
+
+// The processor runs on a Java 25 toolchain in a separate -proc:only compilation (see
+// ElasticsearchDependencyInjectionPlugin), so it is compiled for Java 25 like the foreign-library processor.
+def processorJavaVersion = JavaLanguageVersion.of(25)
+
+tasks.withType(JavaCompile).configureEach {
+  javaCompiler = javaToolchains.compilerFor { languageVersion = processorJavaVersion }
+  options.release = processorJavaVersion.asInt()
+}
+
+tasks.named('javadoc').configure {
+  javadocTool = javaToolchains.javadocToolFor { languageVersion = processorJavaVersion }
+}
+
+dependencies {
+  // The processor matches annotations by qualified name and so has no main dependencies. The tests
+  // compile sources against the annotations in the api library.
+  testImplementation buildLibs.junit4
+  testImplementation project(':libs:dependency-injection')
+}
+
+// TestingConventionsCheckTask uses classLoaderIsolation (in-daemon) so it cannot load class
+// files compiled at Java 25 when the Gradle daemon runs on an older JDK. Additionally, the
+// processor tests extend junit.framework.TestCase directly rather than LuceneTestCase, which
+// is incompatible with the ES testing-conventions baseline. Both issues stem from the same
+// root cause tracked in build-tools-internal: CheckForbiddenApisTask / TestingConventionsCheckTask
+// need toolchain support (they currently always execute in the Gradle daemon JVM).
+tasks.named('testTestingConventions').configure { enabled = false }
+
+// validateModule reads module-info.class in the Gradle daemon, which cannot parse a Java 25 class file
+// when the daemon runs on an older JDK (same root cause as above).
+tasks.named('validateModule').configure { enabled = false }
+
+tasks.withType(CheckForbiddenApisTask).configureEach {
+  replaceSignatureFiles 'jdk-signatures'
+  ignoreMissingClasses = true  // the processor is compiled for Java 25 but the Gradle daemon may run an older JDK
+}
