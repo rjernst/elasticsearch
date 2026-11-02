@@ -483,7 +483,8 @@ public class PluginsServiceTests extends ESTestCase {
                         List.of()
                     ),
                     extensiblePlugin,
-                    null
+                    null,
+                    DependencyInjectionManifest.EMPTY
                 )
             )
         );
@@ -513,7 +514,8 @@ public class PluginsServiceTests extends ESTestCase {
                         List.of()
                     ),
                     extensiblePlugin,
-                    null
+                    null,
+                    DependencyInjectionManifest.EMPTY
                 ),
                 new PluginsService.LoadedPlugin(
                     new PluginDescriptor(
@@ -533,7 +535,8 @@ public class PluginsServiceTests extends ESTestCase {
                         List.of()
                     ),
                     testPlugin,
-                    null
+                    null,
+                    DependencyInjectionManifest.EMPTY
                 )
             )
         );
@@ -822,6 +825,62 @@ public class PluginsServiceTests extends ESTestCase {
         } finally {
             closePluginLoaders(pluginService);
         }
+    }
+
+    public void testPluginManifestLoaded() throws Exception {
+        final Path home = createTempDir();
+        final Settings settings = Settings.builder().put(Environment.PATH_HOME_SETTING.getKey(), home).build();
+        final Path plugins = home.resolve("plugins");
+
+        final Path withManifest = plugins.resolve("with-manifest");
+        Files.createDirectories(withManifest);
+        PluginTestUtil.writeSimplePluginDescriptor(withManifest, "with-manifest", "p.ManifestPlugin");
+        JarUtils.createJarWithEntries(
+            withManifest.resolve("impl.jar"),
+            Map.of("p/ManifestPlugin.class", InMemoryJavaCompiler.compile("p.ManifestPlugin", """
+                package p;
+                import org.elasticsearch.plugins.Plugin;
+                public class ManifestPlugin extends Plugin {}
+                """), DependencyInjectionManifest.RESOURCE_PATH, """
+                {"version": 1, "components": [{"class": "p.Foo", "constructor": [], "interfaces": []}]}
+                """.getBytes(StandardCharsets.UTF_8))
+        );
+
+        final Path withoutManifest = plugins.resolve("without-manifest");
+        Files.createDirectories(withoutManifest);
+        PluginTestUtil.writeSimplePluginDescriptor(withoutManifest, "without-manifest", "p.PlainPlugin");
+        JarUtils.createJarWithEntries(
+            withoutManifest.resolve("impl.jar"),
+            Map.of("p/PlainPlugin.class", InMemoryJavaCompiler.compile("p.PlainPlugin", """
+                package p;
+                import org.elasticsearch.plugins.Plugin;
+                public class PlainPlugin extends Plugin {}
+                """))
+        );
+
+        var pluginService = newPluginsService(settings);
+        try {
+            Map<String, DependencyInjectionManifest> manifests = new HashMap<>();
+            pluginService.forEachLoadedPlugin(p -> manifests.put(p.descriptor().getName(), p.manifest()));
+
+            assertThat(manifests.keySet(), equalTo(Set.of("with-manifest", "without-manifest")));
+            assertThat(
+                manifests.get("with-manifest").components(),
+                equalTo(List.of(new DependencyInjectionManifest.ComponentInfo("p.Foo", List.of(), List.of())))
+            );
+            assertThat(manifests.get("without-manifest"), sameInstance(DependencyInjectionManifest.EMPTY));
+            assertThat(
+                pluginService.flatMapLoadedPlugins(p -> p.manifest().components()).map(c -> c.className()).toList(),
+                equalTo(List.of("p.Foo"))
+            );
+        } finally {
+            closePluginLoaders(pluginService);
+        }
+    }
+
+    public void testMockPluginsServiceManifestsAreEmpty() {
+        PluginsService service = newMockPluginsService(List.of(FakePlugin.class));
+        service.forEachLoadedPlugin(p -> assertThat(p.manifest(), sameInstance(DependencyInjectionManifest.EMPTY)));
     }
 
     public void testStablePluginLoading() throws Exception {

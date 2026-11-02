@@ -61,12 +61,20 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
      * A loaded plugin is one for which Elasticsearch has successfully constructed an instance of the plugin's class
      * @param descriptor Metadata about the plugin, usually loaded from plugin properties
      * @param instance The constructed instance of the plugin's main class
+     * @param classLoader The class loader the plugin was loaded with
+     * @param manifest The build-time dependency injection manifest of the plugin's jars; empty if there is none
      */
-    record LoadedPlugin(PluginDescriptor descriptor, Plugin instance, ClassLoader classLoader) {
+    public record LoadedPlugin(
+        PluginDescriptor descriptor,
+        Plugin instance,
+        ClassLoader classLoader,
+        DependencyInjectionManifest manifest
+    ) {
 
-        LoadedPlugin {
+        public LoadedPlugin {
             Objects.requireNonNull(descriptor);
             Objects.requireNonNull(instance);
+            Objects.requireNonNull(manifest);
         }
     }
 
@@ -184,6 +192,24 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
      */
     public final <T> Stream<T> flatMap(Function<Plugin, Collection<T>> function) {
         return plugins().stream().map(LoadedPlugin::instance).flatMap(p -> function.apply(p).stream());
+    }
+
+    /**
+     * FlatMap a function over all loaded plugins, which carry metadata in addition to the plugin instance
+     * @param function a function that takes a loaded plugin and returns a collection
+     * @return A stream of results
+     * @param <T> The generic type of the collection
+     */
+    public final <T> Stream<T> flatMapLoadedPlugins(Function<LoadedPlugin, Collection<T>> function) {
+        return plugins().stream().flatMap(p -> function.apply(p).stream());
+    }
+
+    /**
+     * Apply a consumer action to each loaded plugin
+     * @param consumer An action that consumes a loaded plugin
+     */
+    public final void forEachLoadedPlugin(Consumer<LoadedPlugin> consumer) {
+        plugins().forEach(consumer);
     }
 
     /**
@@ -398,6 +424,11 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
         // reload SPI with any new services from the plugin
         reloadLuceneSPI(pluginLayer.pluginClassLoader());
 
+        // stable plugins use their own api and are not part of dependency injection
+        DependencyInjectionManifest manifest = pluginBundle.pluginDescriptor().isStable()
+            ? DependencyInjectionManifest.EMPTY
+            : DependencyInjectionManifest.load(pluginBundle.allUrls);
+
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         try {
             // Set context class loader to plugin's class loader so that plugins
@@ -434,7 +465,7 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
                 }
                 plugin = loadPlugin(pluginClass, settings, configPath);
             }
-            loadedPlugins.put(name, new LoadedPlugin(pluginBundle.plugin, plugin, pluginLayer.pluginClassLoader()));
+            loadedPlugins.put(name, new LoadedPlugin(pluginBundle.plugin, plugin, pluginLayer.pluginClassLoader(), manifest));
         } finally {
             Thread.currentThread().setContextClassLoader(cl);
         }

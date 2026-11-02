@@ -67,7 +67,9 @@ public class MockPluginsService extends PluginsService {
             if (logger.isTraceEnabled()) {
                 logger.trace("plugin loaded from classpath [{}]", pluginInfo);
             }
-            pluginsLoaded.add(new LoadedPlugin(pluginInfo, plugin, MockPluginsService.class.getClassLoader()));
+            pluginsLoaded.add(
+                new LoadedPlugin(pluginInfo, plugin, MockPluginsService.class.getClassLoader(), DependencyInjectionManifest.EMPTY)
+            );
         }
         loadExtensions(pluginsLoaded);
         this.classpathPlugins = List.copyOf(pluginsLoaded);

@@ -192,6 +192,7 @@ import org.elasticsearch.plugins.AnalysisPlugin;
 import org.elasticsearch.plugins.CircuitBreakerPlugin;
 import org.elasticsearch.plugins.ClusterCoordinationPlugin;
 import org.elasticsearch.plugins.ClusterPlugin;
+import org.elasticsearch.plugins.DependencyInjectionManifest;
 import org.elasticsearch.plugins.DiscoveryPlugin;
 import org.elasticsearch.plugins.HealthPlugin;
 import org.elasticsearch.plugins.IngestPlugin;
@@ -398,6 +399,7 @@ class NodeConstruction {
     private Environment environment;
     private NodeEnvironment nodeEnvironment;
     private PluginsService pluginsService;
+    private DependencyInjectionManifest serverManifest;
     private NodeClient client;
     private Collection<LifecycleComponent> pluginLifecycleComponents;
     private Node.LocalNodeFactory localNodeFactory;
@@ -424,6 +426,19 @@ class NodeConstruction {
 
     PluginsService pluginsService() {
         return pluginsService;
+    }
+
+    private void logManifests() {
+        if (logger.isDebugEnabled() == false) {
+            return;
+        }
+        logManifest("server", serverManifest);
+        pluginsService.forEachLoadedPlugin(plugin -> logManifest(plugin.descriptor().getName(), plugin.manifest()));
+    }
+
+    private void logManifest(String name, DependencyInjectionManifest manifest) {
+        int registryEntries = manifest.registries().values().stream().mapToInt(List::size).sum();
+        logger.debug("plugin [{}] manifest: {} components, {} registry entries", name, manifest.components().size(), registryEntries);
     }
 
     NodeClient client() {
@@ -528,6 +543,8 @@ class NodeConstruction {
 
         pluginsService = serviceProvider.newPluginService(initialEnvironment, pluginsLoader);
         modules.bindToInstance(PluginsService.class, pluginsService);
+        serverManifest = DependencyInjectionManifest.load(NodeConstruction.class.getClassLoader());
+        logManifests();
         Settings settings = Node.mergePluginSettings(pluginsService.pluginMap(), envSettings);
 
         /*
