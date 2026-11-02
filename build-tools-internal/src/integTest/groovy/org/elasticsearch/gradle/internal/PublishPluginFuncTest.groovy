@@ -644,7 +644,8 @@ def "generates artifacts for shadowed elasticsearch plugin"() {
         """
 
     when:
-    def result = gradleRunner('assemble', '--stacktrace', '-x', 'generateClusterFeaturesMetadata').build()
+    // processDependencyInjectionAnnotations needs the processor project and a JDK 25 toolchain, neither of which exist here
+    def result = gradleRunner('assemble', '--stacktrace', '-x', 'generateClusterFeaturesMetadata', '-x', 'processDependencyInjectionAnnotations').build()
 
     then:
     result.task(":generatePom").outcome == TaskOutcome.SUCCESS

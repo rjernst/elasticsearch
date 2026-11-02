@@ -176,6 +176,10 @@ gradlePlugin {
       id = 'elasticsearch.benchmark'
       implementationClass = 'org.elasticsearch.gradle.internal.BenchmarkPlugin'
     }
+    dependencyInjection {
+      id = 'elasticsearch.dependency-injection'
+      implementationClass = 'org.elasticsearch.gradle.internal.dependencyinjection.ElasticsearchDependencyInjectionPlugin'
+    }
     foreignLibrary {
       id = 'elasticsearch.foreign-library'
       implementationClass = 'org.elasticsearch.gradle.internal.foreign.ForeignLibraryPlugin'

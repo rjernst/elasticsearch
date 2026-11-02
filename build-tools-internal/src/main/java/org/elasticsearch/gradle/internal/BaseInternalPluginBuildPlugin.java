@@ -13,6 +13,7 @@ import groovy.lang.Closure;
 
 import org.elasticsearch.gradle.VersionProperties;
 import org.elasticsearch.gradle.internal.conventions.util.Util;
+import org.elasticsearch.gradle.internal.dependencyinjection.ElasticsearchDependencyInjectionPlugin;
 import org.elasticsearch.gradle.internal.precommit.JarHellPrecommitPlugin;
 import org.elasticsearch.gradle.internal.test.ClusterFeaturesMetadataPlugin;
 import org.elasticsearch.gradle.internal.transport.TransportVersionReferencesPlugin;
@@ -39,6 +40,7 @@ public class BaseInternalPluginBuildPlugin implements Plugin<Project> {
         project.getPluginManager().apply(PluginBuildPlugin.class);
         project.getPluginManager().apply(JarHellPrecommitPlugin.class);
         project.getPluginManager().apply(ElasticsearchJavaPlugin.class);
+        project.getPluginManager().apply(ElasticsearchDependencyInjectionPlugin.class);
         project.getPluginManager().apply(ClusterFeaturesMetadataPlugin.class);
         project.getPluginManager().apply(TransportVersionReferencesPlugin.class);
         boolean isCi = loadBuildParams(project).get().getCi();
