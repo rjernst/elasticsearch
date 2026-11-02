@@ -25,6 +25,7 @@ module org.elasticsearch.server {
     requires org.elasticsearch.geo;
     requires org.elasticsearch.lz4;
     requires org.elasticsearch.xcontent;
+    requires transitive org.elasticsearch.injection.api;
     requires org.elasticsearch.logging;
     requires org.elasticsearch.plugin;
     requires org.elasticsearch.plugin.analysis;
@@ -194,7 +195,6 @@ module org.elasticsearch.server {
     exports org.elasticsearch.common.file;
     exports org.elasticsearch.common.geo;
     exports org.elasticsearch.common.hash;
-    exports org.elasticsearch.injection.api;
     exports org.elasticsearch.injection.guice;
     exports org.elasticsearch.injection.guice.binder;
     exports org.elasticsearch.injection.guice.internal;

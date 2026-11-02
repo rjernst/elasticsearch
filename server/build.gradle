@@ -39,6 +39,7 @@ dependencies {
   api project(':libs:core')
   api project(':libs:logging')
   api project(':libs:x-content')
+  api project(':libs:dependency-injection')
   api project(":libs:geo")
   api project(":libs:lz4")
   api project(":libs:plugin-api")
