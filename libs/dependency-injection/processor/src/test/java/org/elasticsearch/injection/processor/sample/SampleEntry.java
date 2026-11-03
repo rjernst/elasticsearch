@@ -19,10 +19,10 @@ import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
- * A registry entry declaration with a category, a factory marker, and one attribute of each kind the processor
+ * A registry entry declaration with a category, a factory marker and interface, and one attribute of each kind the processor
  * converts, declared here so the processor tests exercise the generic mechanism without depending on a real registry.
  */
-@RegistryEntryType(key = "sample", factoryMarker = SampleReader.class)
+@RegistryEntryType(key = "sample", factoryMarker = SampleReader.class, factory = SampleFactory.class)
 @Repeatable(SampleEntries.class)
 @Target(TYPE)
 @Retention(RUNTIME)

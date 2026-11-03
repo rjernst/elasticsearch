@@ -36,9 +36,13 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
+import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.ElementFilter;
+import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 import javax.tools.StandardLocation;
 
@@ -64,10 +68,12 @@ public final class DependencyInjectionProcessor extends AbstractProcessor {
     private static final String COMPONENT = API_PACKAGE + "Component";
     private static final String INJECT = API_PACKAGE + "Inject";
     private static final String REGISTRY_ENTRY_TYPE = API_PACKAGE + "RegistryEntryType";
-    private static final String NO_MARKER_BINARY_NAME = REGISTRY_ENTRY_TYPE + "$NoMarker";
 
-    /** How a registry entry annotation was declared: the registry it belongs to and how instances are created. */
-    private record RegistryType(String key, String factoryMarker) {}
+    /**
+     * How a registry entry annotation was declared: the registry it belongs to, the annotation marking the member used
+     * to create instances, and the functional interface that member must be adaptable to.
+     */
+    private record RegistryType(String key, String factoryMarker, TypeElement factory) {}
 
     private final ManifestModel manifest = new ManifestModel();
     private final Set<String> seenEntries = new HashSet<>();
@@ -140,16 +146,22 @@ public final class DependencyInjectionProcessor extends AbstractProcessor {
             }
             String key = null;
             String factoryMarker = null;
+            TypeElement factory = null;
             for (var value : processingEnv.getElementUtils().getElementValuesWithDefaults(mirror).entrySet()) {
                 String name = value.getKey().getSimpleName().toString();
                 if (name.equals("key")) {
                     key = (String) value.getValue().getValue();
                 } else if (name.equals("factoryMarker")) {
-                    String markerName = binaryName((TypeMirror) value.getValue().getValue());
-                    factoryMarker = markerName.equals(NO_MARKER_BINARY_NAME) ? null : markerName;
+                    factoryMarker = binaryName((TypeMirror) value.getValue().getValue());
+                } else if (name.equals("factory")) {
+                    // a primitive, array or void factory is not an interface; leave it null so each use reports an error
+                    if (value.getValue().getValue() instanceof DeclaredType declared
+                        && declared.asElement() instanceof TypeElement element) {
+                        factory = element;
+                    }
                 }
             }
-            return new RegistryType(key, factoryMarker);
+            return new RegistryType(key, factoryMarker, factory);
         }
         return null;
     }
@@ -306,12 +318,9 @@ public final class DependencyInjectionProcessor extends AbstractProcessor {
                 return;
             }
 
-            String factory = null;
-            if (registryType.factoryMarker() != null) {
-                factory = factoryOf(type, registryType.factoryMarker());
-                if (factory == null) {
-                    return;
-                }
+            String factory = factoryOf(type, registryType);
+            if (factory == null) {
+                return;
             }
 
             var entry = new RegistryEntryModel(registryType.key(), binaryName(type.asType()), factory, attributes);
@@ -356,10 +365,12 @@ public final class DependencyInjectionProcessor extends AbstractProcessor {
     }
 
     /**
-     * Finds the single constructor or static method of {@code type} carrying the factory marker annotation and
-     * returns its name ({@code <init>} for a constructor), or reports an error and returns null.
+     * Finds the single constructor or static method of {@code type} carrying the factory marker annotation, checks
+     * that it is adaptable to the registry's factory interface, and returns its name ({@code <init>} for a
+     * constructor). Reports an error and returns null if there is not exactly one such member or it is not adaptable.
      */
-    private String factoryOf(TypeElement type, String markerName) {
+    private String factoryOf(TypeElement type, RegistryType registryType) {
+        String markerName = registryType.factoryMarker();
         List<ExecutableElement> marked = new ArrayList<>();
         for (Element member : type.getEnclosedElements()) {
             if ((member.getKind() == ElementKind.CONSTRUCTOR || member.getKind() == ElementKind.METHOD)
@@ -380,26 +391,189 @@ public final class DependencyInjectionProcessor extends AbstractProcessor {
             return null;
         }
         ExecutableElement factory = marked.get(0);
-        if (factory.getParameters().size() != 1) {
-            error(factory, "@" + markerName + " member [" + factory + "] must have exactly one parameter");
-            return null;
-        }
-        if (factory.getKind() == ElementKind.CONSTRUCTOR) {
-            return "<init>";
-        }
-        var types = processingEnv.getTypeUtils();
-        if (factory.getModifiers().contains(Modifier.STATIC) == false) {
+        if (factory.getKind() == ElementKind.METHOD && factory.getModifiers().contains(Modifier.STATIC) == false) {
             error(factory, "@" + markerName + " method [" + factory + "] must be static");
             return null;
         }
-        if (types.isSubtype(types.erasure(type.asType()), types.erasure(factory.getReturnType())) == false) {
+
+        TypeElement factoryInterface = registryType.factory();
+        ExecutableElement abstractMethod = factoryInterface == null ? null : singleAbstractMethod(factoryInterface);
+        if (abstractMethod == null) {
             error(
-                factory,
-                "@" + markerName + " method [" + factory + "] must return [" + type.getQualifiedName() + "] or a supertype of it"
+                type,
+                "factory ["
+                    + (factoryInterface == null ? "not a class or interface" : factoryInterface.getQualifiedName())
+                    + "] of the registry entry annotation for ["
+                    + type.getQualifiedName()
+                    + "] must be an interface with exactly one abstract method"
             );
             return null;
         }
-        return factory.getSimpleName().toString();
+        if (isAdaptable(type, factory, factoryInterface, abstractMethod) == false) {
+            return null;
+        }
+        return factory.getKind() == ElementKind.CONSTRUCTOR ? "<init>" : factory.getSimpleName().toString();
+    }
+
+    /**
+     * The one abstract method of {@code factoryInterface}, ignoring {@code default}, {@code static} and {@code Object}
+     * methods, or null if it is not an interface or does not have exactly one.
+     */
+    private ExecutableElement singleAbstractMethod(TypeElement factoryInterface) {
+        if (factoryInterface.getKind() != ElementKind.INTERFACE) {
+            return null;
+        }
+        var elements = processingEnv.getElementUtils();
+        var types = processingEnv.getTypeUtils();
+        List<ExecutableElement> methods = ElementFilter.methodsIn(elements.getAllMembers(factoryInterface));
+        List<ExecutableElement> objectMethods = ElementFilter.methodsIn(
+            elements.getAllMembers(elements.getTypeElement("java.lang.Object"))
+        );
+        List<ExecutableElement> abstractMethods = new ArrayList<>();
+        for (ExecutableElement method : methods) {
+            // a method overridden by another member (for example redeclared to narrow its signature) is not a separate method
+            boolean overridden = methods.stream().anyMatch(other -> other != method && elements.overrides(other, method, factoryInterface));
+            boolean objectMethod = objectMethods.stream()
+                .anyMatch(
+                    o -> o.getModifiers().contains(Modifier.PUBLIC)
+                        && o.getSimpleName().equals(method.getSimpleName())
+                        && o.getParameters().size() == method.getParameters().size()
+                        && sameErasedParameters(o, method, types)
+                );
+            if (overridden == false
+                && objectMethod == false
+                && method.getModifiers().contains(Modifier.ABSTRACT)
+                && method.getModifiers().contains(Modifier.DEFAULT) == false
+                && method.getModifiers().contains(Modifier.STATIC) == false) {
+                abstractMethods.add(method);
+            }
+        }
+        return abstractMethods.size() == 1 ? abstractMethods.get(0) : null;
+    }
+
+    private static boolean sameErasedParameters(ExecutableElement a, ExecutableElement b, Types types) {
+        for (int i = 0; i < a.getParameters().size(); i++) {
+            if (types.isSameType(
+                types.erasure(a.getParameters().get(i).asType()),
+                types.erasure(b.getParameters().get(i).asType())
+            ) == false) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Checks that {@code factory}, a constructor or static method of {@code type}, can be adapted to
+     * {@code factoryInterface}: it accepts what the interface method supplies, produces what it returns and throws
+     * only what it declares. A return type that is a type variable of the interface is bound to {@code type}.
+     * Reports each mismatch as an error on {@code factory} and returns whether there were none.
+     */
+    private boolean isAdaptable(TypeElement type, ExecutableElement factory, TypeElement factoryInterface, ExecutableElement method) {
+        var types = processingEnv.getTypeUtils();
+        var elements = processingEnv.getElementUtils();
+        ExecutableType methodType = (ExecutableType) types.asMemberOf((DeclaredType) factoryInterface.asType(), method);
+        String prefix = "["
+            + type.getQualifiedName()
+            + "] member ["
+            + factory
+            + "] cannot be adapted to ["
+            + factoryInterface.getQualifiedName()
+            + "]: ";
+
+        TypeMirror returnType = methodType.getReturnType();
+        boolean bound = returnType instanceof TypeVariable variable && factoryInterface.equals(variable.asElement().getEnclosingElement());
+        List<? extends TypeMirror> parameterTypes = methodType.getParameterTypes();
+        for (TypeMirror parameterType : parameterTypes) {
+            if (containsTypeVariable(parameterType)) {
+                error(
+                    factory,
+                    prefix
+                        + "parameter type ["
+                        + parameterType
+                        + "] of the factory method is a type variable; declare a named interface that binds it"
+                );
+                return false;
+            }
+        }
+        if (bound == false && containsTypeVariable(returnType)) {
+            error(
+                factory,
+                prefix
+                    + "return type ["
+                    + returnType
+                    + "] of the factory method uses a type variable; declare a named interface that binds it"
+            );
+            return false;
+        }
+
+        boolean adaptable = true;
+        List<? extends VariableElement> factoryParameters = factory.getParameters();
+        if (factoryParameters.size() != parameterTypes.size()) {
+            error(
+                factory,
+                prefix + "expected " + parameterTypes.size() + " parameter(s) " + parameterTypes + " but found " + factoryParameters.size()
+            );
+            return false;
+        }
+        for (int i = 0; i < parameterTypes.size(); i++) {
+            TypeMirror actual = factoryParameters.get(i).asType();
+            if (types.isAssignable(parameterTypes.get(i), actual) == false) {
+                error(factory, prefix + "parameter " + (i + 1) + " must accept [" + parameterTypes.get(i) + "] but is [" + actual + "]");
+                adaptable = false;
+            }
+        }
+
+        TypeMirror result = factory.getKind() == ElementKind.CONSTRUCTOR ? type.asType() : factory.getReturnType();
+        TypeMirror expectedResult = bound ? type.asType() : returnType;
+        if (bound && type.getTypeParameters().isEmpty() == false) {
+            // the type variables of a generic class cannot be matched to those of a factory method, so compare raw types
+            result = types.erasure(result);
+            expectedResult = types.erasure(expectedResult);
+        }
+        if (types.isAssignable(result, expectedResult) == false) {
+            error(factory, prefix + "result [" + result + "] is not assignable to [" + expectedResult + "]");
+            adaptable = false;
+        }
+
+        TypeMirror runtimeException = elements.getTypeElement("java.lang.RuntimeException").asType();
+        TypeMirror javaError = elements.getTypeElement("java.lang.Error").asType();
+        for (TypeMirror declared : methodType.getThrownTypes()) {
+            if (declared.getKind() == TypeKind.TYPEVAR) {
+                error(
+                    factory,
+                    prefix
+                        + "thrown type ["
+                        + declared
+                        + "] of the factory method is a type variable; declare a named interface that binds it"
+                );
+                return false;
+            }
+        }
+        for (TypeMirror thrown : factory.getThrownTypes()) {
+            if (types.isAssignable(thrown, runtimeException) || types.isAssignable(thrown, javaError)) {
+                continue;
+            }
+            if (methodType.getThrownTypes().stream().noneMatch(declared -> types.isAssignable(thrown, declared))) {
+                error(factory, prefix + "throws [" + thrown + "] which the interface method does not declare");
+                adaptable = false;
+            }
+        }
+        return adaptable;
+    }
+
+    private static boolean containsTypeVariable(TypeMirror type) {
+        if (type.getKind() == TypeKind.TYPEVAR) {
+            return true;
+        } else if (type instanceof ArrayType array) {
+            return containsTypeVariable(array.getComponentType());
+        } else if (type instanceof DeclaredType declared) {
+            return declared.getTypeArguments().stream().anyMatch(DependencyInjectionProcessor::containsTypeVariable);
+        } else if (type instanceof WildcardType wildcard) {
+            return (wildcard.getExtendsBound() != null && containsTypeVariable(wildcard.getExtendsBound()))
+                || (wildcard.getSuperBound() != null && containsTypeVariable(wildcard.getSuperBound()));
+        }
+        return false;
     }
 
     /**

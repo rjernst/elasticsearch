@@ -17,10 +17,10 @@ import java.lang.annotation.Target;
 import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
-/** A registry entry declaration with no category and no factory marker, like {@code @PersistentTask}. */
-@RegistryEntryType(key = "plain")
+/** A second registry entry declaration, with no category, so tests can use more than one registry. */
+@RegistryEntryType(key = "other", factoryMarker = SampleReader.class, factory = SampleFactory.class)
 @Target(TYPE)
 @Retention(RUNTIME)
-public @interface PlainEntry {
+public @interface OtherEntry {
     String name();
 }

@@ -25,12 +25,12 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * Declaring the entry on the class itself lets the build record it in the dependency injection manifest, so the
  * {@link NamedWriteableRegistry} entries of a node can be derived without each plugin listing them by hand. The class
  * must be a subtype of {@link #category()} and have exactly one constructor or static method marked
- * {@link WriteableReader}, which is the reader used to deserialize it.
+ * {@link WriteableReader}, which must be adaptable to {@link Writeable.Reader} and is the reader used to deserialize it.
  */
 @Target(TYPE)
 @Retention(RUNTIME)
 @Repeatable(NamedWriteableEntries.class)
-@RegistryEntryType(key = "named_writeable", factoryMarker = WriteableReader.class)
+@RegistryEntryType(key = "named_writeable", factoryMarker = WriteableReader.class, factory = Writeable.Reader.class)
 public @interface NamedWriteableEntry {
 
     /** The name the entry is registered under within its category. */

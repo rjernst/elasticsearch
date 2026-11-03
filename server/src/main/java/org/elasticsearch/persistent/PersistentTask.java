@@ -9,8 +9,6 @@
 
 package org.elasticsearch.persistent;
 
-import org.elasticsearch.injection.api.RegistryEntryType;
-
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
@@ -20,13 +18,11 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 /**
  * Declares that the annotated class is the executor of the persistent task named {@link #name()}.
  * <p>
- * Declaring the task on the executor itself lets the build record it in the dependency injection manifest, so persistent
- * task executors can be discovered rather than registered by hand. Unlike named writeables there is no factory: the
- * executor is created as a component.
+ * Declaring the task on the executor itself keeps its name and scope next to the code that runs it. This is a plain
+ * annotation: it is not a registry entry and the build does not record it in the dependency injection manifest.
  */
 @Target(TYPE)
 @Retention(RUNTIME)
-@RegistryEntryType(key = "persistent_task")
 public @interface PersistentTask {
 
     /** The name of the persistent task. */

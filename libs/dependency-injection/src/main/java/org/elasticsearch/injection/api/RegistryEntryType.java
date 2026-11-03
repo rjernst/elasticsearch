@@ -22,7 +22,9 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * Each registry (for example named writeables, or persistent tasks) defines its own annotation, so that the
  * attributes of an entry are type checked where it is declared. Marking that annotation with
  * {@code RegistryEntryType} is all that is needed for the build time processor to collect its uses into the
- * manifest under {@link #key()}, without the processor knowing anything about the individual registry.
+ * manifest under {@link #key()}, without the processor knowing anything about the individual registry. Entries are
+ * created through a member of the annotated class marked by {@link #factoryMarker()}, which must be adaptable to
+ * {@link #factory()}.
  */
 @Target(ANNOTATION_TYPE)
 @Retention(RUNTIME)
@@ -33,12 +35,17 @@ public @interface RegistryEntryType {
 
     /**
      * An annotation that marks the constructor or static method used to create instances of an annotated class.
-     * When set, exactly one such member must exist on the annotated class; when left as {@link NoMarker} the
-     * registry has no factory.
+     * Exactly one such member must exist on the annotated class.
      */
-    Class<? extends Annotation> factoryMarker() default NoMarker.class;
+    Class<? extends Annotation> factoryMarker();
 
-    /** Default value of {@link #factoryMarker()}, indicating the registry entry has no factory. */
-    @interface NoMarker {
-    }
+    /**
+     * The functional interface the registry builds from the marked member, for example {@code Writeable.Reader}.
+     * <p>
+     * The build proves that the marked member is adaptable to the single abstract method of this interface: it
+     * accepts the arguments that method receives, returns something assignable to its result and throws no checked
+     * exception it does not declare. A result that is a type variable of the interface is bound to the annotated
+     * class. Any other type variable in the method's parameters is an error; declare a named interface that binds it.
+     */
+    Class<?> factory();
 }

@@ -24,12 +24,12 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * Declaring the entry on the class itself lets the build record it in the dependency injection manifest, so the
  * {@link NamedXContentRegistry} entries of a node can be derived without each plugin listing them by hand. The class
  * must be a subtype of {@link #category()} and have exactly one constructor or static method marked
- * {@link XContentReader}, which is the parser used to read it.
+ * {@link XContentReader}, which must be adaptable to {@link XContentValueParser} and is the parser used to read it.
  */
 @Target(TYPE)
 @Retention(RUNTIME)
 @Repeatable(NamedXContentEntries.class)
-@RegistryEntryType(key = "named_xcontent", factoryMarker = XContentReader.class)
+@RegistryEntryType(key = "named_xcontent", factoryMarker = XContentReader.class, factory = XContentValueParser.class)
 public @interface NamedXContentEntry {
 
     /** The name the entry is registered under within its category. */

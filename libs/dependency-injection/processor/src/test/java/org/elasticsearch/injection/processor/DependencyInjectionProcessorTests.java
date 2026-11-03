@@ -247,10 +247,11 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             package test;
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleReader;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
             @SampleEntry(name = "params", category = Category.class)
             public class Params implements Category {
                 @SampleReader
-                public Params(String in) {}
+                public Params(SampleInput in) {}
             }
             """);
 
@@ -284,11 +285,12 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleKind;
             import org.elasticsearch.injection.processor.sample.SampleReader;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
             @SampleEntry(name = "params", category = Category.class, deprecatedNames = { "a", "b\\"c" }, kind = SampleKind.TWO, weight = 7)
             public class Params implements Category {
                 private Params() {}
                 @SampleReader
-                public static Category read(String in) { return new Params(); }
+                public static Params read(SampleInput in) { return new Params(); }
             }
             """);
 
@@ -312,11 +314,12 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             package test;
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleReader;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
             @SampleEntry(name = "one", category = Category.class)
             @SampleEntry(name = "two", category = Category.class)
             public class Params implements Category {
                 @SampleReader
-                public Params(String in) {}
+                public Params(SampleInput in) {}
             }
             """);
 
@@ -329,28 +332,6 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
         assertTrue(manifest, one > 0 && two > one);
     }
 
-    public void testEntryTypeWithoutFactoryMarker() throws Exception {
-        CompilationResult result = compile("test.Task", """
-            package test;
-            import org.elasticsearch.injection.processor.sample.PlainEntry;
-            @PlainEntry(name = "my_task")
-            public class Task {}
-            """);
-
-        assertTrue(result.errors().toString(), result.success());
-        assertEquals("""
-            {
-              "version": 1,
-              "components": [],
-              "registries": {
-                "plain": [
-                  {"class": "test.Task", "attributes": {"name": "my_task"}}
-                ]
-              }
-            }
-            """, result.manifest());
-    }
-
     public void testEntryMissingFactoryMarkerFails() {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("test.Category", CATEGORY);
@@ -359,7 +340,7 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             @SampleEntry(name = "params", category = Category.class)
             public class Params implements Category {
-                public Params(String in) {}
+                public Params(SampleInput in) {}
             }
             """);
 
@@ -378,33 +359,17 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             package test;
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleReader;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
             @SampleEntry(name = "params", category = Category.class)
             public class Params implements Category {
                 @SampleReader
-                public Params(String in) {}
+                public Params(SampleInput in) {}
                 @SampleReader
-                public static Params read(String in) { return null; }
+                public static Params read(SampleInput in) { return null; }
             }
             """);
 
         assertErrorContaining(compile(sources), "found 2");
-    }
-
-    public void testFactoryWithWrongParameterCountFails() {
-        Map<String, String> sources = new LinkedHashMap<>();
-        sources.put("test.Category", CATEGORY);
-        sources.put("test.Params", """
-            package test;
-            import org.elasticsearch.injection.processor.sample.SampleEntry;
-            import org.elasticsearch.injection.processor.sample.SampleReader;
-            @SampleEntry(name = "params", category = Category.class)
-            public class Params implements Category {
-                @SampleReader
-                public Params() {}
-            }
-            """);
-
-        assertErrorContaining(compile(sources), "must have exactly one parameter");
     }
 
     public void testFactoryMethodMustBeStatic() {
@@ -414,31 +379,15 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             package test;
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleReader;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
             @SampleEntry(name = "params", category = Category.class)
             public class Params implements Category {
                 @SampleReader
-                public Params read(String in) { return this; }
+                public Params read(SampleInput in) { return this; }
             }
             """);
 
         assertErrorContaining(compile(sources), "must be static");
-    }
-
-    public void testFactoryMethodMustReturnAnnotatedType() {
-        Map<String, String> sources = new LinkedHashMap<>();
-        sources.put("test.Category", CATEGORY);
-        sources.put("test.Params", """
-            package test;
-            import org.elasticsearch.injection.processor.sample.SampleEntry;
-            import org.elasticsearch.injection.processor.sample.SampleReader;
-            @SampleEntry(name = "params", category = Category.class)
-            public class Params implements Category {
-                @SampleReader
-                public static String read(String in) { return in; }
-            }
-            """);
-
-        assertErrorContaining(compile(sources), "must return [test.Params] or a supertype of it");
     }
 
     public void testCategoryNotASupertypeFails() {
@@ -448,10 +397,11 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             package test;
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleReader;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
             @SampleEntry(name = "params", category = Category.class)
             public class Params {
                 @SampleReader
-                public Params(String in) {}
+                public Params(SampleInput in) {}
             }
             """);
 
@@ -461,8 +411,8 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
     public void testEntryOnInterfaceFails() {
         CompilationResult result = compile("test.Task", """
             package test;
-            import org.elasticsearch.injection.processor.sample.PlainEntry;
-            @PlainEntry(name = "my_task")
+            import org.elasticsearch.injection.processor.sample.OtherEntry;
+            @OtherEntry(name = "my_task")
             public interface Task {}
             """);
 
@@ -477,10 +427,11 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
                 package test;
                 import org.elasticsearch.injection.processor.sample.SampleEntry;
                 import org.elasticsearch.injection.processor.sample.SampleReader;
+                import org.elasticsearch.injection.processor.sample.SampleInput;
                 @SampleEntry(name = "params", category = Category.class)
                 public class $CLASS implements Category {
                     @SampleReader
-                    public $CLASS(String in) {}
+                    public $CLASS(SampleInput in) {}
                 }
                 """.replace("$CLASS", name));
         }
@@ -495,20 +446,22 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             package test;
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleReader;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
             @SampleEntry(name = "params", category = Category.class)
             public class First implements Category {
                 @SampleReader
-                public First(String in) {}
+                public First(SampleInput in) {}
             }
             """);
         sources.put("test.Second", """
             package test;
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleReader;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
             @SampleEntry(name = "other", category = Category.class, deprecatedNames = { "params" })
             public class Second implements Category {
                 @SampleReader
-                public Second(String in) {}
+                public Second(SampleInput in) {}
             }
             """);
 
@@ -520,20 +473,432 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
         sources.put("test.Category", CATEGORY);
         sources.put("test.Params", """
             package test;
-            import org.elasticsearch.injection.processor.sample.PlainEntry;
+            import org.elasticsearch.injection.processor.sample.OtherEntry;
             import org.elasticsearch.injection.processor.sample.SampleEntry;
             import org.elasticsearch.injection.processor.sample.SampleReader;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
             @SampleEntry(name = "same", category = Category.class)
-            @PlainEntry(name = "same")
+            @OtherEntry(name = "same")
             public class Params implements Category {
                 @SampleReader
-                public Params(String in) {}
+                public Params(SampleInput in) {}
             }
             """);
 
         CompilationResult result = compile(sources);
 
         assertTrue(result.errors().toString(), result.success());
+    }
+
+    // ---- factory adaptability
+
+    /** Compiles a {@code Params} class registered as a {@code SampleEntry}, whose members are {@code members}. */
+    private CompilationResult compileParams(String members) {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("test.Category", CATEGORY);
+        sources.put("test.Params", """
+            package test;
+            import java.io.IOException;
+            import org.elasticsearch.injection.processor.sample.SampleEntry;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
+            import org.elasticsearch.injection.processor.sample.SampleReader;
+            @SampleEntry(name = "params", category = Category.class)
+            public class Params implements Category {
+            $MEMBERS
+            }
+            """.replace("$MEMBERS", members));
+        return compile(sources);
+    }
+
+    /**
+     * Compiles an {@code Item} registered through a registry declared in the sources, whose factory interface is
+     * {@code factory} and whose annotated member is {@code members}.
+     */
+    private CompilationResult compileCustomFactory(String factory, String members) {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("test.Factory", "package test;\n" + factory);
+        sources.put("test.Marker", """
+            package test;
+            import java.lang.annotation.*;
+            @Target({ ElementType.CONSTRUCTOR, ElementType.METHOD })
+            @Retention(RetentionPolicy.RUNTIME)
+            public @interface Marker {}
+            """);
+        sources.put("test.Entry", """
+            package test;
+            import java.lang.annotation.*;
+            import org.elasticsearch.injection.api.RegistryEntryType;
+            @RegistryEntryType(key = "custom", factoryMarker = Marker.class, factory = Factory.class)
+            @Target(ElementType.TYPE)
+            @Retention(RetentionPolicy.RUNTIME)
+            public @interface Entry {}
+            """);
+        sources.put("test.Item", """
+            package test;
+            import java.io.IOException;
+            @Entry
+            public class Item {
+            $MEMBERS
+            }
+            """.replace("$MEMBERS", members));
+        return compile(sources);
+    }
+
+    public void testConstructorAcceptingSupertypeOfInputIsAdaptable() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public Params(Object in) {}
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testFactoryWithWrongParameterTypeFails() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public Params(String in) {}
+            """);
+
+        assertErrorContaining(result, "[test.Params] member [Params(java.lang.String)] cannot be adapted to");
+        assertErrorContaining(
+            result,
+            "parameter 1 must accept [org.elasticsearch.injection.processor.sample.SampleInput] but is [java.lang.String]"
+        );
+    }
+
+    public void testFactoryWithTooFewParametersFails() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public Params() {}
+            """);
+
+        assertErrorContaining(result, "expected 1 parameter(s)");
+        assertErrorContaining(result, "but found 0");
+    }
+
+    public void testFactoryWithTooManyParametersFails() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public Params(SampleInput in, int extra) {}
+            """);
+
+        assertErrorContaining(result, "but found 2");
+    }
+
+    public void testStaticFactoryWithUnrelatedReturnTypeFails() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public static String read(SampleInput in) { return ""; }
+            """);
+
+        assertErrorContaining(result, "result [java.lang.String] is not assignable to [test.Params]");
+    }
+
+    public void testStaticFactoryReturningSupertypeFails() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public static Category read(SampleInput in) { return null; }
+            """);
+
+        assertErrorContaining(result, "result [test.Category] is not assignable to [test.Params]");
+    }
+
+    public void testFactoryThrowingDeclaredCheckedExceptionIsAdaptable() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public Params(SampleInput in) throws IOException {}
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testFactoryThrowingSubtypeOfDeclaredExceptionIsAdaptable() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public static Params read(SampleInput in) throws java.io.FileNotFoundException { return null; }
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testFactoryThrowingUncheckedExceptionIsAdaptable() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public Params(SampleInput in) throws IllegalStateException, AssertionError {}
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testFactoryThrowingUndeclaredCheckedExceptionFails() {
+        CompilationResult result = compileParams("""
+            @SampleReader
+            public Params(SampleInput in) throws java.util.concurrent.TimeoutException {}
+            """);
+
+        assertErrorContaining(result, "throws [java.util.concurrent.TimeoutException] which the interface method does not declare");
+    }
+
+    public void testFactoryInterfaceWithTwoAbstractMethodsFails() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> {
+                T create(String in);
+                T other(String in);
+            }
+            """, """
+            @Marker
+            public Item(String in) {}
+            """);
+
+        assertErrorContaining(result, "factory [test.Factory] of the registry entry annotation for [test.Item]");
+        assertErrorContaining(result, "must be an interface with exactly one abstract method");
+    }
+
+    public void testFactoryInterfaceWithNoAbstractMethodFails() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory {
+                default void create(String in) {}
+            }
+            """, """
+            @Marker
+            public Item(String in) {}
+            """);
+
+        assertErrorContaining(result, "must be an interface with exactly one abstract method");
+    }
+
+    public void testFactoryThatIsNotAnInterfaceFails() {
+        CompilationResult result = compileCustomFactory("""
+            public abstract class Factory {
+                abstract Object create(String in);
+            }
+            """, """
+            @Marker
+            public Item(String in) {}
+            """);
+
+        assertErrorContaining(result, "must be an interface with exactly one abstract method");
+    }
+
+    public void testFactoryInterfaceWithDefaultStaticAndObjectMethodsIsAdaptable() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> {
+                T create(String in);
+                default T createTwice(String in) { create(in); return create(in); }
+                static void helper() {}
+                boolean equals(Object other);
+                String toString();
+            }
+            """, """
+            @Marker
+            public Item(String in) {}
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testFactoryInterfaceMethodImplementedByDefaultInSubinterfaceIsIgnored() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> extends Base<T> {
+                T create(String in);
+                default T legacy(String in) { return create(in); }
+            }
+            interface Base<T> {
+                T legacy(String in);
+            }
+            """, """
+            @Marker
+            public Item(String in) {}
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testFactoryInterfaceTypeVariableReturnIsBoundToAnnotatedClass() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> {
+                T create(String in);
+            }
+            """, """
+            @Marker
+            public static Item create(String in) { return new Item(); }
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testStaticFactoryReturningUnrelatedTypeForBoundVariableFails() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> {
+                T create(String in);
+            }
+            """, """
+            @Marker
+            public static Object create(String in) { return null; }
+            """);
+
+        assertErrorContaining(result, "result [java.lang.Object] is not assignable to [test.Item]");
+    }
+
+    public void testFactoryInterfaceWithUnboundParameterTypeVariableFails() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> {
+                T create(T in);
+            }
+            """, """
+            @Marker
+            public Item(Object in) {}
+            """);
+
+        assertErrorContaining(
+            result,
+            "parameter type [T] of the factory method is a type variable; declare a named interface that binds it"
+        );
+    }
+
+    public void testFactoryInterfaceWithNestedTypeVariableParameterFails() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> {
+                T create(java.util.List<? extends T> in);
+            }
+            """, """
+            @Marker
+            public Item(java.util.List<?> in) {}
+            """);
+
+        assertErrorContaining(result, "is a type variable; declare a named interface that binds it");
+    }
+
+    public void testFactoryInterfaceWithTypeVariableThrownTypeFails() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T, E extends Exception> {
+                T create(String in) throws E;
+            }
+            """, """
+            @Marker
+            public Item(String in) throws IOException {}
+            """);
+
+        assertErrorContaining(result, "thrown type [E] of the factory method is a type variable");
+    }
+
+    public void testFactoryInterfaceReturningTypeVariableContainerFails() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> {
+                java.util.List<T> create(String in);
+            }
+            """, """
+            @Marker
+            public static java.util.List<Item> create(String in) { return null; }
+            """);
+
+        assertErrorContaining(result, "return type [java.util.List<T>] of the factory method uses a type variable");
+    }
+
+    public void testGenericAnnotatedClassWithStaticFactoryIsAdaptable() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("test.Category", CATEGORY);
+        sources.put("test.Params", """
+            package test;
+            import org.elasticsearch.injection.processor.sample.SampleEntry;
+            import org.elasticsearch.injection.processor.sample.SampleInput;
+            import org.elasticsearch.injection.processor.sample.SampleReader;
+            @SampleEntry(name = "params", category = Category.class)
+            public class Params<T> implements Category {
+                @SampleReader
+                public static <T> Params<T> read(SampleInput in) { return null; }
+            }
+            """);
+
+        CompilationResult result = compile(sources);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testFactoryThatIsNotAClassOrInterfaceFails() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("test.Marker", """
+            package test;
+            import java.lang.annotation.*;
+            @Target({ ElementType.CONSTRUCTOR, ElementType.METHOD })
+            public @interface Marker {}
+            """);
+        sources.put("test.Entry", """
+            package test;
+            import java.lang.annotation.*;
+            import org.elasticsearch.injection.api.RegistryEntryType;
+            @RegistryEntryType(key = "custom", factoryMarker = Marker.class, factory = int.class)
+            @Target(ElementType.TYPE)
+            public @interface Entry {}
+            """);
+        sources.put("test.Item", """
+            package test;
+            @Entry
+            public class Item {
+                @Marker
+                public Item() {}
+            }
+            """);
+
+        assertErrorContaining(compile(sources), "factory [not a class or interface]");
+    }
+
+    public void testFactoryInterfaceWithNonVariableGenericReturnIsChecked() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> {
+                java.util.List<String> create(String in);
+            }
+            """, """
+            @Marker
+            public static java.util.List<String> create(String in) { return null; }
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testInheritedAbstractMethodResolvedThroughTypeArguments() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> extends Base<T, java.io.IOException> {}
+            interface Base<R, E extends Exception> {
+                R apply(String in) throws E;
+            }
+            """, """
+            @Marker
+            public Item(String in) throws IOException {}
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testInheritedAbstractMethodRedeclaredIsASingleMethod() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> extends Base<T, java.io.IOException> {
+                @Override
+                T apply(String in) throws java.io.IOException;
+            }
+            interface Base<R, E extends Exception> {
+                R apply(String in) throws E;
+            }
+            """, """
+            @Marker
+            public Item(String in) throws IOException {}
+            """);
+
+        assertTrue(result.errors().toString(), result.success());
+    }
+
+    public void testInheritedAbstractMethodStillChecksExceptions() {
+        CompilationResult result = compileCustomFactory("""
+            public interface Factory<T> extends Base<T, IllegalStateException> {}
+            interface Base<R, E extends Exception> {
+                R apply(String in) throws E;
+            }
+            """, """
+            @Marker
+            public Item(String in) throws IOException {}
+            """);
+
+        assertErrorContaining(result, "throws [java.io.IOException] which the interface method does not declare");
     }
 
     // ---- output
@@ -564,8 +929,11 @@ public class DependencyInjectionProcessorTests extends ProcessorTestCase {
             """;
         String entry = """
             package test;
-            @org.elasticsearch.injection.processor.sample.PlainEntry(name = "$NAME")
-            public class $CLASS {}
+            @org.elasticsearch.injection.processor.sample.OtherEntry(name = "$NAME")
+            public class $CLASS {
+                @org.elasticsearch.injection.processor.sample.SampleReader
+                public $CLASS(org.elasticsearch.injection.processor.sample.SampleInput in) {}
+            }
             """;
         String[] names = { "Alpha", "Beta", "Gamma" };
 
