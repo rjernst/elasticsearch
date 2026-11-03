@@ -11,6 +11,7 @@ apply plugin: 'elasticsearch.build'
 apply plugin: 'elasticsearch.publish'
 apply plugin: 'elasticsearch.internal-test-artifact'
 apply plugin: 'elasticsearch.embedded-providers'
+apply plugin: 'elasticsearch.dependency-injection'
 
 embeddedProviders {
   impl 'x-content', project(':libs:x-content:impl')
