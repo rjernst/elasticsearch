@@ -5,16 +5,22 @@
  * 2.0.
  */
 
-package org.elasticsearch.xpack.core.downsample;
+package org.elasticsearch.xpack.downsample;
 
 import org.apache.lucene.util.BytesRef;
+import org.elasticsearch.common.io.stream.NamedWriteableEntry;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.io.stream.WriteableReader;
 import org.elasticsearch.persistent.PersistentTaskState;
+import org.elasticsearch.xcontent.NamedXContentEntry;
 import org.elasticsearch.xcontent.ObjectParser;
 import org.elasticsearch.xcontent.ParseField;
 import org.elasticsearch.xcontent.XContentBuilder;
 import org.elasticsearch.xcontent.XContentParser;
+import org.elasticsearch.xcontent.XContentReader;
+import org.elasticsearch.xpack.core.downsample.DownsampleShardIndexerStatus;
+import org.elasticsearch.xpack.core.downsample.DownsampleShardTask;
 
 import java.io.IOException;
 
@@ -23,6 +29,8 @@ import java.io.IOException;
  *                                     the downsample task
  * @param tsid The latest successfully processed tsid component of a tuple (tsid, timestamp)
  */
+@NamedWriteableEntry(name = DownsampleShardPersistentTaskState.NAME, category = PersistentTaskState.class)
+@NamedXContentEntry(name = DownsampleShardPersistentTaskState.NAME, category = PersistentTaskState.class)
 public record DownsampleShardPersistentTaskState(DownsampleShardIndexerStatus downsampleShardIndexerStatus, BytesRef tsid)
     implements
         PersistentTaskState {
@@ -48,6 +56,7 @@ public record DownsampleShardPersistentTaskState(DownsampleShardIndexerStatus do
         );
     }
 
+    @WriteableReader
     public DownsampleShardPersistentTaskState(final StreamInput in) throws IOException {
         this(DownsampleShardIndexerStatus.readFromStream(in), in.readBytesRef());
     }
@@ -99,6 +108,7 @@ public record DownsampleShardPersistentTaskState(DownsampleShardIndexerStatus do
         return new DownsampleShardPersistentTaskState(DownsampleShardIndexerStatus.readFromStream(in), in.readBytesRef());
     }
 
+    @XContentReader
     public static DownsampleShardPersistentTaskState fromXContent(final XContentParser parser) throws IOException {
         final DownsampleShardPersistentTaskState.Builder builder = new DownsampleShardPersistentTaskState.Builder();
         PARSER.parse(parser, builder, null);

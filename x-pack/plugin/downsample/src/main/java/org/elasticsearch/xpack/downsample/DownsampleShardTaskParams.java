@@ -10,14 +10,18 @@ package org.elasticsearch.xpack.downsample;
 import org.elasticsearch.TransportVersion;
 import org.elasticsearch.action.downsample.DownsampleConfig;
 import org.elasticsearch.common.Strings;
+import org.elasticsearch.common.io.stream.NamedWriteableEntry;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.io.stream.WriteableReader;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.persistent.PersistentTaskParams;
+import org.elasticsearch.xcontent.NamedXContentEntry;
 import org.elasticsearch.xcontent.ObjectParser;
 import org.elasticsearch.xcontent.ParseField;
 import org.elasticsearch.xcontent.XContentBuilder;
 import org.elasticsearch.xcontent.XContentParser;
+import org.elasticsearch.xcontent.XContentReader;
 import org.elasticsearch.xpack.core.downsample.DownsampleShardTask;
 
 import java.io.IOException;
@@ -26,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+@NamedWriteableEntry(name = DownsampleShardTaskParams.NAME, category = PersistentTaskParams.class)
+@NamedXContentEntry(name = DownsampleShardTaskParams.NAME, category = PersistentTaskParams.class)
 public record DownsampleShardTaskParams(
     DownsampleConfig downsampleConfig,
     String downsampleIndex,
@@ -64,6 +70,7 @@ public record DownsampleShardTaskParams(
         PARSER.declareObject(Builder::multiFieldSources, (p, c) -> p.map(), MULTI_FIELD_SOURCES);
     }
 
+    @WriteableReader
     DownsampleShardTaskParams(final StreamInput in) throws IOException {
         this(
             new DownsampleConfig(in),
@@ -123,6 +130,7 @@ public record DownsampleShardTaskParams(
         }
     }
 
+    @XContentReader
     public static DownsampleShardTaskParams fromXContent(XContentParser parser) throws IOException {
         final Builder builder = new Builder();
         PARSER.parse(parser, builder, null);

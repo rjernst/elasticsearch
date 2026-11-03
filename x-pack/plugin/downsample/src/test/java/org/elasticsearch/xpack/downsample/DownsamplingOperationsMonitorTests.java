@@ -17,7 +17,6 @@ import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
 import org.elasticsearch.search.aggregations.bucket.histogram.DateHistogramInterval;
 import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.xpack.core.downsample.DownsampleShardIndexerStatus;
-import org.elasticsearch.xpack.core.downsample.DownsampleShardPersistentTaskState;
 
 import java.util.Map;
 

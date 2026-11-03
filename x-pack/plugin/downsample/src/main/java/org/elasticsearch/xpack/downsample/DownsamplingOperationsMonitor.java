@@ -12,7 +12,6 @@ import org.elasticsearch.datastreams.DownsamplingOperations;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.persistent.PersistentTaskState;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata;
-import org.elasticsearch.xpack.core.downsample.DownsampleShardPersistentTaskState;
 
 import java.util.HashSet;
 import java.util.Set;

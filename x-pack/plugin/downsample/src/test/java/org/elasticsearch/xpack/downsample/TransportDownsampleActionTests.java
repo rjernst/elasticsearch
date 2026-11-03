@@ -57,7 +57,6 @@ import org.elasticsearch.transport.TransportService;
 import org.elasticsearch.xcontent.XContentType;
 import org.elasticsearch.xcontent.json.JsonXContent;
 import org.elasticsearch.xpack.core.downsample.DownsampleShardIndexerStatus;
-import org.elasticsearch.xpack.core.downsample.DownsampleShardPersistentTaskState;
 import org.elasticsearch.xpack.core.ilm.LifecycleSettings;
 import org.hamcrest.Matchers;
 import org.junit.After;
