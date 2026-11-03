@@ -7,6 +7,7 @@
 
 package org.elasticsearch.xpack.downsample;
 
+import org.elasticsearch.core.SuppressForbidden;
 import org.elasticsearch.persistent.PersistentTaskParams;
 import org.elasticsearch.persistent.PersistentTaskState;
 import org.elasticsearch.plugins.DependencyInjectionManifest;
@@ -33,6 +34,7 @@ import static org.hamcrest.Matchers.equalTo;
  */
 public class DownsampleManifestTests extends ESTestCase {
 
+    @SuppressForbidden(reason = "reads manifest resources from the test classpath, which may be class directories or jars")
     private static DependencyInjectionManifest loadDownsampleManifest() throws IOException {
         List<DependencyInjectionManifest> matching = new ArrayList<>();
         List<URL> resources = Collections.list(
