@@ -69,9 +69,9 @@ public class DownsampleManifestTests extends ESTestCase {
             manifest.registries().get("named_writeable"),
             "<init>",
             Map.of(
-                DownsampleShardPersistentTaskState.class,
+                DownsampleShardPersistentTaskState.class.getName(),
                 new Expected(DownsampleShardPersistentTaskState.NAME, PersistentTaskState.class),
-                DownsampleShardTaskParams.class,
+                DownsampleShardTaskParams.class.getName(),
                 new Expected(DownsampleShardTaskParams.NAME, PersistentTaskParams.class)
             )
         );
@@ -79,9 +79,9 @@ public class DownsampleManifestTests extends ESTestCase {
             manifest.registries().get("named_xcontent"),
             "fromXContent",
             Map.of(
-                DownsampleShardPersistentTaskState.class,
+                DownsampleShardPersistentTaskState.class.getName(),
                 new Expected(DownsampleShardPersistentTaskState.NAME, PersistentTaskState.class),
-                DownsampleShardTaskParams.class,
+                DownsampleShardTaskParams.class.getName(),
                 new Expected(DownsampleShardTaskParams.NAME, PersistentTaskParams.class)
             )
         );
@@ -89,22 +89,17 @@ public class DownsampleManifestTests extends ESTestCase {
 
     private record Expected(String name, Class<?> category) {}
 
-    private static void assertEntries(List<RegistryEntryInfo> entries, String factory, Map<Class<?>, Expected> expected) {
-        assertThat(
-            entries.stream().map(RegistryEntryInfo::className).collect(Collectors.toSet()),
-            equalTo(expected.keySet().stream().map(Class::getName).collect(Collectors.toSet()))
-        );
+    /** Asserts the entries are exactly those expected, keyed by class name, each created by {@code factory}. */
+    private static void assertEntries(List<RegistryEntryInfo> entries, String factory, Map<String, Expected> expected) {
         assertThat(entries.size(), equalTo(expected.size()));
-        for (RegistryEntryInfo entry : entries) {
-            assertThat(entry.className(), entry.factoryMethod(), equalTo(factory));
-            Expected e = expected.entrySet()
-                .stream()
-                .filter(x -> x.getKey().getName().equals(entry.className()))
-                .findFirst()
-                .orElseThrow()
-                .getValue();
-            assertThat(entry.className(), entry.attributes().get("name"), equalTo(e.name()));
-            assertThat(entry.className(), entry.attributes().get("category"), equalTo(e.category().getName()));
+        Map<String, RegistryEntryInfo> byClassName = entries.stream().collect(Collectors.toMap(RegistryEntryInfo::className, e -> e));
+        assertThat(byClassName.keySet(), equalTo(expected.keySet()));
+        for (var expectedEntry : expected.entrySet()) {
+            String className = expectedEntry.getKey();
+            RegistryEntryInfo entry = byClassName.get(className);
+            assertThat(className, entry.factoryMethod(), equalTo(factory));
+            assertThat(className, entry.attributes().get("name"), equalTo(expectedEntry.getValue().name()));
+            assertThat(className, entry.attributes().get("category"), equalTo(expectedEntry.getValue().category().getName()));
         }
     }
 }
